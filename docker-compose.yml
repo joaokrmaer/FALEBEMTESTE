@@ -1,0 +1,50 @@
+# n8n 1.x + PostgreSQL
+# - banco "n8n": usado pelo próprio n8n (workflows, credenciais, execuções)
+# - banco "falebem": usado pelo bot (estado da conversa e log de erros) — criado por db/init
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: n8n
+      TZ: America/Recife
+    ports:
+      - "127.0.0.1:5432:5432"   # só acessível do seu PC (DBeaver/pgAdmin)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro   # roda só na primeira subida (volume vazio)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d n8n"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:1.123.83   # versão fixa 1.x, como pede o desafio
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5678:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}   # criptografa as credenciais salvas no n8n
+      GENERIC_TIMEZONE: America/Recife
+      TZ: America/Recife
+      WEBHOOK_URL: ${WEBHOOK_URL}
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  postgres_data:
+  n8n_data:
