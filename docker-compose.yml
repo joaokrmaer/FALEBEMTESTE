@@ -9,7 +9,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: n8n
-      TZ: America/Recife
     ports:
       - "127.0.0.1:5432:5432"   # só acessível do seu PC (DBeaver/pgAdmin)
     volumes:
@@ -37,8 +36,9 @@ services:
       DB_POSTGRESDB_USER: ${POSTGRES_USER}
       DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}   # criptografa as credenciais salvas no n8n
-      GENERIC_TIMEZONE: America/Recife
-      TZ: America/Recife
+      # Servidor em UTC (padrão); a conversão para America/Recife é feita no código, com Intl.
+      # O n8n assume America/New_York se GENERIC_TIMEZONE não for definido, por isso fica explícito.
+      GENERIC_TIMEZONE: UTC
       WEBHOOK_URL: ${WEBHOOK_URL}
       N8N_RUNNERS_ENABLED: "true"
       N8N_DIAGNOSTICS_ENABLED: "false"

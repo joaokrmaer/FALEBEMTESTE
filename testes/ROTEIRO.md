@@ -58,7 +58,7 @@ As respostas do bot aparecem no webhook.site. Os testes usam a conversa 42; o es
 ## 9. Falhas (requisito 7)
 | Teste | Esperado |
 |---|---|
-| A. `config.openai_model` = `modelo-que-nao-existe` + 01-duvida-preco | Menu (falha da IA vira "outro") + linha nova em `error_log`. **Voltar o modelo depois.** |
-| B. Banco indisponível (tabela `conversation_state` renomeada) + 01-duvida-preco | "Desculpe, tive um problema para responder agora..." + linha em `error_log` |
+| A. `config.openai_model` = `modelo-que-nao-existe` + 01-duvida-preco | Menu (falha da IA vira "outro") + linha nova em `error_log` + nota privada para a equipe (`"private": true`). **Voltar o modelo depois.** |
+| B. Banco indisponível (tabela `conversation_state` renomeada) + 01-duvida-preco | "Desculpe, tive um problema para responder agora..." + linha em `error_log` + nota privada para a equipe. Só funciona com o workflow ativo (Error Trigger) |
 
 Para ver os erros: `SELECT * FROM error_log ORDER BY created_at DESC;`

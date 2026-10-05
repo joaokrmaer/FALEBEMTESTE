@@ -34,7 +34,7 @@ docker compose up -d      # na 1ª subida, db/init/01-falebem.sql cria o banco d
 
 **Importar:** Import from File → `workflows/bot-fale-bem.json`, selecionar as credenciais nos nós, ajustar `chatwoot_url` e `openai_model` no nó **Config** e ativar. O Chatwoot chama `POST {n8n}/webhook/chatwoot-falebem` no `message_created`.
 
-> O JSON é gerado por `python tools/gerar_workflow.py` a partir de `workflows/code/*.js` e `parte2/*.js`, para o código poder ser lido e revisado fora do n8n.
+> A documentação fica dentro do workflow: uma nota colorida por faixa, uma nota curta embaixo de cada nó e comentários no código de cada Code node.
 
 ---
 
@@ -53,7 +53,7 @@ MATRÍCULA   pergunta o que falta | Pipedrive (pessoa sem duplicar → negócio)
 HUMANO      feriados → dentro do horário? → transfere para a equipe | informa quando a equipe volta
 OUTRO       lembra o dado pendente ou apresenta o menu
 SEM TEXTO   aviso → oferta de atendente → transferência
-FALHAS      Error Trigger → lê a execução que falhou → error_log + contingência
+FALHAS      Error Trigger → lê a execução que falhou → error_log + contingência + alerta à equipe
 PARTE 2     os três exercícios, com Manual Trigger próprio
 ```
 
@@ -93,8 +93,10 @@ Alternativas consideradas:
 - **Só texto vai para a IA.** Figurinha, emoji solto, foto sem legenda e áudio sem transcrição recebem resposta fixa, o que economiza chamadas e ajuda contra o 429. Repetições escalam: aviso → oferta de atendente → transferência.
 - **Pipedrive API v2**, porque a v1 de pessoas e negócios foi desligada em 31/07/2026. Pessoa: busca pelo telefone normalizado com o 2.1, atualiza ou cria. Negócio: não cria se já existe um aberto com o mesmo título. Valor = matrícula + mensalidade × duração: R$ 7.122 no Inglês e R$ 4.308 no Espanhol.
 - **Etiqueta:** o `/labels` do Chatwoot substitui a lista, então o bot envia as antigas + `lead-qualificado`.
-- **Horário:** regra do 2.2 + feriados nacionais, de PE e de Recife de 2026 e 2027. Fora do horário, informa a próxima abertura pulando fim de semana e feriado.
+- **Horário:** regra do 2.2 + feriados nacionais, de PE e de Recife de 2026 e 2027. Fora do horário, informa a próxima abertura pulando fim de semana e feriado. O servidor, o n8n e o Postgres ficam em UTC; a conversão para `America/Recife` é feita só no código, com `Intl`.
+- **Todo Switch tem fallback.** Intenção desconhecida vai para `outro`, tipo desconhecido vai para a faixa sem texto, e um passo de lead desconhecido vira erro, que cai na faixa de falhas. Nenhuma mensagem fica sem caminho.
 - **Falhas num Error Trigger**, em vez de dezenas de linhas de erro cruzando o canvas. Qualquer nó que falhe dispara a faixa de falhas, que lê a execução pela API do n8n, o que funciona mesmo com o banco do bot fora, grava em `error_log` e envia a contingência. A OpenAI é tratada no próprio fluxo, porque o bot segue sem ela e responde como `outro`. Só dispara com o workflow ativo.
+- **Alerta para a equipe.** Toda falha, da IA ou da faixa de falhas, deixa uma **nota privada** na conversa do Chatwoot (`/messages` com `private: true`): a atendente vê o erro na própria conversa e pode assumir; o contato não vê. Não precisa de serviço novo, e o filtro de entrada ignora mensagens privadas, então não há loop.
 
 ```sql
 SELECT created_at, node, message, conversation_id FROM error_log ORDER BY created_at DESC;
@@ -157,7 +159,7 @@ POST  /api/v2/deals         {"title": "Matrícula Inglês", "person_id": 9, "val
 
 ## Parte 2: Code nodes
 
-Em `parte2/` e na faixa **Parte 2** do workflow. JavaScript puro, passa nos casos do PDF e em casos de borda.
+Na faixa **Parte 2** do workflow, com o próprio Manual Trigger (*Test workflow → Testar Parte 2*). JavaScript puro, passa nos casos do PDF e em casos de borda.
 
 | Exercício | Observações |
 |---|---|
@@ -196,6 +198,7 @@ Em `parte2/` e na faixa **Parte 2** do workflow. JavaScript puro, passa nos caso
 ## O que ficou de fora
 
 - **Chatwoot real:** basta trocar `config.chatwoot_url` e o token.
+- **Alerta fora do Chatwoot:** se o próprio Chatwoot cair, a nota privada também não chega; fica o `error_log`. O próximo passo seria um e-mail ou Slack para a equipe.
 - ***Debounce*:** o 2.3 está pronto e o desenho está acima, mas o bot responde mensagem a mensagem.
 - **Whisper/OCR:** o bot usa a transcrição do Chatwoot quando existe.
 - **"Esfriar" estado antigo:** uma matrícula parada há dias retoma de onde parou. A ideia é usar `updated_at` e a janela de 24h.
@@ -211,10 +214,7 @@ Em `parte2/` e na faixa **Parte 2** do workflow. JavaScript puro, passa nos caso
 docker-compose.yml          n8n 1.123.83 + Postgres 16
 .env.example                variáveis (o .env real não vai para o Git)
 db/init/01-falebem.sql      banco do bot: conversation_state + error_log
-workflows/bot-fale-bem.json workflow completo para importar
-workflows/code/*.js         código de cada Code node do bot
-parte2/*.js                 os três exercícios da Parte 2
+workflows/bot-fale-bem.json workflow completo para importar (Parte 1, Parte 2 e falhas)
 testes/                     mensagens de teste + ROTEIRO.md
-tools/gerar_workflow.py     monta o JSON a partir do código
 docs/prints/                prints do webhook.site e do Pipedrive
 ```

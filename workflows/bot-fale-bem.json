@@ -31,7 +31,9 @@
         0,
         0
       ],
-      "webhookId": "6f0c2b8e-3d4a-4c1e-9b7a-2f5d8e1c4a90"
+      "webhookId": "6f0c2b8e-3d4a-4c1e-9b7a-2f5d8e1c4a90",
+      "notes": "Entrada: o Chatwoot chama aqui a cada message_created. Pin data = payload do PDF.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -111,7 +113,9 @@
       "position": [
         220,
         0
-      ]
+      ],
+      "notes": "Só segue se: incoming, não privada, remetente contact, conversa pending e sem atendente.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -141,7 +145,9 @@
       "position": [
         440,
         0
-      ]
+      ],
+      "notes": "URL do Chatwoot e modelo da OpenAI. Trocar aqui vale para o workflow inteiro.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -162,7 +168,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Preparar mensagem\"\n// Modo: Run Once for Each Item\n// Achata o payload do Chatwoot no que o resto do fluxo usa e classifica o tipo da mensagem.\n// Só o tipo \"texto\" vai para a IA; os outros recebem resposta fixa (economiza chamada e evita 429).\n//\n// tipo:\n//   texto          -> tem texto útil (digitado, legenda de mídia ou áudio transcrito pelo Chatwoot)\n//   vazio          -> só espaço, pontuação ou emoji\n//   midia          -> foto, vídeo, figurinha, documento... sem legenda\n//   audio          -> áudio sem transcrição\n//   nao_suportado  -> o WhatsApp não entregou o conteúdo (ex.: visualização única)\n\nconst body = $json.body ?? {};\nconst anexos = Array.isArray(body.attachments) ? body.attachments : [];\n\n// Limpa o que o contato digitou: junta espaços e reduz pontuação repetida (\"oi......\" -> \"oi.\").\nfunction limparTexto(valor) {\n  return String(valor ?? '')\n    .replace(/\\s+/g, ' ')\n    .replace(/([.,;:!?])\\1+/g, '$1')\n    .replace(/^[\\s.,;:!?]+/, '')\n    .trim();\n}\n\n// Texto útil = tem pelo menos uma letra ou número (emoji e pontuação sozinhos não contam).\nconst temConteudo = texto => /[\\p{L}\\p{N}]/u.test(texto);\n\nconst textoDigitado = limparTexto(body.content);\nconst audio = anexos.find(a => a.file_type === 'audio');\nconst textoAudio = limparTexto(audio?.transcribed_text);\n\nlet tipo;\nlet texto = '';\nlet origem = null;\n\nif (body.content_attributes?.is_unsupported) {\n  tipo = 'nao_suportado';\n} else if (temConteudo(textoDigitado)) {\n  tipo = 'texto';\n  texto = textoDigitado;\n  origem = anexos.length ? 'legenda' : 'digitado';\n} else if (audio && temConteudo(textoAudio)) {\n  tipo = 'texto';\n  texto = textoAudio;\n  origem = 'audio_transcrito';\n} else if (audio) {\n  tipo = 'audio';\n} else if (anexos.length || body.content_type === 'sticker') {\n  tipo = 'midia';\n} else {\n  tipo = 'vazio';\n}\n\n// Figurinha: o Chatwoot marca content_type \"sticker\"; no WhatsApp ela também chega como imagem .webp.\nconst eh_figurinha = body.content_type === 'sticker' ||\n  anexos.some(a => a.file_type === 'image' && String(a.extension ?? '').toLowerCase() === 'webp');\n\nreturn {\n  json: {\n    eh_figurinha: tipo === 'midia' && eh_figurinha,\n    message_id: body.id,\n    account_id: body.account?.id,\n    conversation_id: body.conversation?.id,\n    contato_nome: body.sender?.name ?? null,\n    telefone: body.sender?.phone_number ?? body.conversation?.meta?.sender?.phone_number ?? null,\n    created_at: body.created_at,\n    tipo,\n    texto,\n    origem,\n    config: $json.config,\n  },\n};\n"
+        "jsCode": "// Achata o payload do Chatwoot no que o resto do fluxo usa e classifica o tipo da mensagem.\n// Só o tipo \"texto\" vai para a IA; os outros recebem resposta fixa (economiza chamada e evita 429).\n//\n// tipo:\n//   texto          -> tem texto útil (digitado, legenda de mídia ou áudio transcrito pelo Chatwoot)\n//   vazio          -> só espaço, pontuação ou emoji\n//   midia          -> foto, vídeo, figurinha, documento... sem legenda\n//   audio          -> áudio sem transcrição\n//   nao_suportado  -> o WhatsApp não entregou o conteúdo (ex.: visualização única)\n\nconst body = $json.body ?? {};\nconst anexos = Array.isArray(body.attachments) ? body.attachments : [];\n\n// Limpa o que o contato digitou: junta espaços e reduz pontuação repetida (\"oi......\" -> \"oi.\").\nfunction limparTexto(valor) {\n  return String(valor ?? '')\n    .replace(/\\s+/g, ' ')\n    .replace(/([.,;:!?])\\1+/g, '$1')\n    .replace(/^[\\s.,;:!?]+/, '')\n    .trim();\n}\n\n// Texto útil = tem pelo menos uma letra ou número (emoji e pontuação sozinhos não contam).\nconst temConteudo = texto => /[\\p{L}\\p{N}]/u.test(texto);\n\nconst textoDigitado = limparTexto(body.content);\nconst audio = anexos.find(a => a.file_type === 'audio');\nconst textoAudio = limparTexto(audio?.transcribed_text);\n\nlet tipo;\nlet texto = '';\nlet origem = null;\n\nif (body.content_attributes?.is_unsupported) {\n  tipo = 'nao_suportado';\n} else if (temConteudo(textoDigitado)) {\n  tipo = 'texto';\n  texto = textoDigitado;\n  origem = anexos.length ? 'legenda' : 'digitado';\n} else if (audio && temConteudo(textoAudio)) {\n  tipo = 'texto';\n  texto = textoAudio;\n  origem = 'audio_transcrito';\n} else if (audio) {\n  tipo = 'audio';\n} else if (anexos.length || body.content_type === 'sticker') {\n  tipo = 'midia';\n} else {\n  tipo = 'vazio';\n}\n\n// Figurinha: o Chatwoot marca content_type \"sticker\"; no WhatsApp ela também chega como imagem .webp.\nconst eh_figurinha = body.content_type === 'sticker' ||\n  anexos.some(a => a.file_type === 'image' && String(a.extension ?? '').toLowerCase() === 'webp');\n\nreturn {\n  json: {\n    eh_figurinha: tipo === 'midia' && eh_figurinha,\n    message_id: body.id,\n    account_id: body.account?.id,\n    conversation_id: body.conversation?.id,\n    contato_nome: body.sender?.name ?? null,\n    telefone: body.sender?.phone_number ?? body.conversation?.meta?.sender?.phone_number ?? null,\n    created_at: body.created_at,\n    tipo,\n    texto,\n    origem,\n    config: $json.config,\n  },\n};\n"
       },
       "id": "Preparar mensagem",
       "name": "Preparar mensagem",
@@ -171,12 +177,14 @@
       "position": [
         660,
         0
-      ]
+      ],
+      "notes": "Limpa o texto e classifica o tipo: texto, vazio, mídia, áudio ou não suportado.",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Normalizar telefone (2.1)\"\n// Modo: Run Once for Each Item\n// Entrada: $json.telefone (qualquer formato). Saída: o mesmo item + telefone_normalizado\n// no formato +55DDDNÚMERO, ou null quando não dá para garantir um celular brasileiro válido.\n\n// DDDs em uso no Brasil (Anatel). Combinações como 20, 23, 25, 26, 30, 36... não existem.\nconst DDDS_VALIDOS = new Set([\n  11, 12, 13, 14, 15, 16, 17, 18, 19,\n  21, 22, 24, 27, 28,\n  31, 32, 33, 34, 35, 37, 38,\n  41, 42, 43, 44, 45, 46, 47, 48, 49,\n  51, 53, 54, 55,\n  61, 62, 63, 64, 65, 66, 67, 68, 69,\n  71, 73, 74, 75, 77, 79,\n  81, 82, 83, 84, 85, 86, 87, 88, 89,\n  91, 92, 93, 94, 95, 96, 97, 98, 99,\n]);\n\nfunction normalizarTelefone(valor) {\n  if (valor === null || valor === undefined) return null;\n  const texto = String(valor).trim();\n  let digitos = texto.replace(/\\D/g, '');\n\n  // Veio com \"+\" mas não é +55: número estrangeiro, não é celular brasileiro.\n  if (texto.startsWith('+') && !digitos.startsWith('55')) return null;\n\n  // Com código do país: 55 + DDD(2) + 9 dígitos = 13.\n  // Só removemos o 55 quando o tamanho bate, porque 55 também é um DDD (RS).\n  if (digitos.length === 13 && digitos.startsWith('55')) {\n    digitos = digitos.slice(2);\n  } else if (digitos.length === 12 && digitos.startsWith('0')) {\n    // Prefixo de discagem interurbana: 0 + DDD + número.\n    digitos = digitos.slice(1);\n  }\n\n  // Celular nacional: DDD(2) + 9 + 8 dígitos = 11.\n  if (digitos.length !== 11) return null;\n  if (!DDDS_VALIDOS.has(Number(digitos.slice(0, 2)))) return null;\n  if (digitos[2] !== '9') return null;\n\n  return '+55' + digitos;\n}\n\nreturn {\n  json: {\n    ...$json,\n    telefone_normalizado: normalizarTelefone($json.telefone),\n  },\n};\n"
+        "jsCode": "// Entrada: $json.telefone (qualquer formato). Saída: o mesmo item + telefone_normalizado\n// no formato +55DDDNÚMERO, ou null quando não dá para garantir um celular brasileiro válido.\n\n// DDDs em uso no Brasil (Anatel). Combinações como 20, 23, 25, 26, 30, 36... não existem.\nconst DDDS_VALIDOS = new Set([\n  11, 12, 13, 14, 15, 16, 17, 18, 19,\n  21, 22, 24, 27, 28,\n  31, 32, 33, 34, 35, 37, 38,\n  41, 42, 43, 44, 45, 46, 47, 48, 49,\n  51, 53, 54, 55,\n  61, 62, 63, 64, 65, 66, 67, 68, 69,\n  71, 73, 74, 75, 77, 79,\n  81, 82, 83, 84, 85, 86, 87, 88, 89,\n  91, 92, 93, 94, 95, 96, 97, 98, 99,\n]);\n\nfunction normalizarTelefone(valor) {\n  if (valor === null || valor === undefined) return null;\n  const texto = String(valor).trim();\n  let digitos = texto.replace(/\\D/g, '');\n\n  // Veio com \"+\" mas não é +55: número estrangeiro, não é celular brasileiro.\n  if (texto.startsWith('+') && !digitos.startsWith('55')) return null;\n\n  // Com código do país: 55 + DDD(2) + 9 dígitos = 13.\n  // Só removemos o 55 quando o tamanho bate, porque 55 também é um DDD (RS).\n  if (digitos.length === 13 && digitos.startsWith('55')) {\n    digitos = digitos.slice(2);\n  } else if (digitos.length === 12 && digitos.startsWith('0')) {\n    // Prefixo de discagem interurbana: 0 + DDD + número.\n    digitos = digitos.slice(1);\n  }\n\n  // Celular nacional: DDD(2) + 9 + 8 dígitos = 11.\n  if (digitos.length !== 11) return null;\n  if (!DDDS_VALIDOS.has(Number(digitos.slice(0, 2)))) return null;\n  if (digitos[2] !== '9') return null;\n\n  return '+55' + digitos;\n}\n\nreturn {\n  json: {\n    ...$json,\n    telefone_normalizado: normalizarTelefone($json.telefone),\n  },\n};\n"
       },
       "id": "Normalizar telefone (2.1)",
       "name": "Normalizar telefone (2.1)",
@@ -185,7 +193,9 @@
       "position": [
         880,
         0
-      ]
+      ],
+      "notes": "Exercício 2.1: telefone vira +55DDDNÚMERO (chave para não duplicar no Pipedrive).",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -209,7 +219,9 @@
           "name": "Postgres - falebem"
         }
       },
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "notes": "Lê a conversa no Postgres. Always Output Data: conversa nova também segue.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -223,7 +235,9 @@
       "position": [
         1320,
         0
-      ]
+      ],
+      "notes": "Junta a mensagem com o estado salvo (null na primeira mensagem).",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -351,7 +365,9 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "fallbackOutput": 1
+        }
       },
       "id": "Tipo de mensagem",
       "name": "Tipo de mensagem",
@@ -360,11 +376,13 @@
       "position": [
         1540,
         0
-      ]
+      ],
+      "notes": "Só texto vai para a IA. Fallback: tipo desconhecido vai para a faixa sem texto.",
+      "notesInFlow": true
     },
     {
       "parameters": {
-        "content": "## 3. Intenção (IA)\nA OpenAI responde em **JSON com schema fixo** (structured output): a intenção só pode ser `interesse_matricula`, `duvida`, `falar_com_humano` ou `outro`. Na mesma chamada ela extrai nome, e-mail e curso, se aparecerem.\n\nSe o bot está no meio da matrícula, o pedido avisa a IA o que foi perguntado por último (assim \"Mariana\" é entendido como o nome).\n\n**Falha da IA** (erro, timeout, 429 após 3 tentativas, resposta fora da lista) → intenção vira `outro` e o erro vai em `ia.erro` para o log.",
+        "content": "## 3. Intenção (IA)\nA OpenAI responde em **JSON com schema fixo** (structured output): a intenção só pode ser `interesse_matricula`, `duvida`, `falar_com_humano` ou `outro`. Na mesma chamada ela extrai nome, e-mail e curso, se aparecerem.\n\nSe o bot está no meio da matrícula, o pedido avisa a IA o que foi perguntado por último (assim \"Mariana\" é entendido como o nome).\n\n**Falha da IA** (erro, timeout, 429 após 3 tentativas, resposta fora da lista) → intenção vira `outro` (o contato recebe o menu), o erro vai para o `error_log` e a equipe recebe uma nota privada na conversa.",
         "height": 680,
         "width": 860,
         "color": 7
@@ -381,7 +399,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Montar pedido para a IA\"\n// Modo: Run Once for Each Item\n// Monta o corpo da chamada à OpenAI. A resposta vem em JSON com schema fixo (structured output):\n// a intenção só pode ser um dos 4 valores e nome/e-mail/curso vêm null quando não aparecem.\n\n// O modelo é escolhido no nó Config (config.openai_model).\nconst MODELO = $json.config?.openai_model || 'gpt-4.1-nano';\n// Modelos de raciocínio (gpt-5*, o1, o3...) não aceitam temperature; os demais usam 0 (resposta estável).\nconst ACEITA_TEMPERATURA = !/^(gpt-5|o\\d)/.test(MODELO);\n\nconst INSTRUCOES = `Você classifica mensagens de WhatsApp recebidas pela Escola Fale Bem, que vende cursos de inglês e espanhol.\n\nEscolha UMA intenção:\n- interesse_matricula: quer se matricular, se inscrever, começar um curso, OU está respondendo dados pedidos para a matrícula (nome, e-mail, curso).\n- duvida: pergunta sobre preço, mensalidade, matrícula, duração, turmas, horários, aula experimental ou qualquer informação sobre a escola.\n- falar_com_humano: pede para falar com uma pessoa, atendente ou humano.\n- outro: saudação sozinha, agradecimento, assunto sem relação com a escola, ou não dá para saber.\n\nExtraia também, SOMENTE se estiverem escritos na mensagem:\n- nome: o nome que a pessoa disse ser o dela; senão null.\n- email: o endereço de e-mail escrito; senão null.\n- curso: \"Inglês\" se a mensagem cita inglês (ou english); \"Espanhol\" se cita espanhol (ou spanish); \"nenhum\" se não cita nenhum dos dois.\nNunca invente dados.`;\n\nconst estado = $json.estado;\nlet contexto = 'Contexto: conversa sem matrícula em andamento.';\nif (estado?.stage === 'coletando') {\n  contexto = `Contexto: o bot está coletando dados de matrícula e acabou de pedir: ${estado.campo_pendente ?? 'dados'}. ` +\n    `Já coletado: nome=${estado.nome ?? 'falta'}, e-mail=${estado.email ?? 'falta'}, curso=${estado.curso ?? 'falta'}. ` +\n    'Se a mensagem responde a esse pedido, a intenção é interesse_matricula.';\n}\n// O \"sim\" depois de o bot oferecer atendente é tratado em código (Validar resposta da IA), não aqui:\n// avisar o modelo fazia o gpt-4.1-nano classificar qualquer mensagem seguinte (até um e-mail) como falar_com_humano.\n\nconst pedido = {\n  model: MODELO,\n  ...(ACEITA_TEMPERATURA && { temperature: 0 }),\n  messages: [\n    { role: 'system', content: INSTRUCOES },\n    { role: 'system', content: contexto },\n    { role: 'user', content: $json.texto },\n  ],\n  response_format: {\n    type: 'json_schema',\n    json_schema: {\n      name: 'classificacao',\n      strict: true,\n      schema: {\n        type: 'object',\n        additionalProperties: false,\n        required: ['intencao', 'nome', 'email', 'curso'],\n        properties: {\n          intencao: { type: 'string', enum: ['interesse_matricula', 'duvida', 'falar_com_humano', 'outro'] },\n          nome: { type: ['string', 'null'] },\n          email: { type: ['string', 'null'] },\n          curso: { type: 'string', enum: ['Inglês', 'Espanhol', 'nenhum'] },\n        },\n      },\n    },\n  },\n};\n\nreturn { json: { ...$json, pedido_ia: pedido } };\n"
+        "jsCode": "// Monta o corpo da chamada à OpenAI. A resposta vem em JSON com schema fixo (structured output):\n// a intenção só pode ser um dos 4 valores e nome/e-mail/curso vêm null quando não aparecem.\n\n// O modelo é escolhido no nó Config (config.openai_model).\nconst MODELO = $json.config?.openai_model || 'gpt-4.1-nano';\n// Modelos de raciocínio (gpt-5*, o1, o3...) não aceitam temperature; os demais usam 0 (resposta estável).\nconst ACEITA_TEMPERATURA = !/^(gpt-5|o\\d)/.test(MODELO);\n\nconst INSTRUCOES = `Você classifica mensagens de WhatsApp recebidas pela Escola Fale Bem, que vende cursos de inglês e espanhol.\n\nEscolha UMA intenção:\n- interesse_matricula: quer se matricular, se inscrever, começar um curso, OU está respondendo dados pedidos para a matrícula (nome, e-mail, curso).\n- duvida: pergunta sobre preço, mensalidade, matrícula, duração, turmas, horários, aula experimental ou qualquer informação sobre a escola.\n- falar_com_humano: pede para falar com uma pessoa, atendente ou humano.\n- outro: saudação sozinha, agradecimento, assunto sem relação com a escola, ou não dá para saber.\n\nExtraia também, SOMENTE se estiverem escritos na mensagem:\n- nome: o nome que a pessoa disse ser o dela; senão null.\n- email: o endereço de e-mail escrito; senão null.\n- curso: \"Inglês\" se a mensagem cita inglês (ou english); \"Espanhol\" se cita espanhol (ou spanish); \"nenhum\" se não cita nenhum dos dois.\nNunca invente dados.`;\n\nconst estado = $json.estado;\nlet contexto = 'Contexto: conversa sem matrícula em andamento.';\nif (estado?.stage === 'coletando') {\n  contexto = `Contexto: o bot está coletando dados de matrícula e acabou de pedir: ${estado.campo_pendente ?? 'dados'}. ` +\n    `Já coletado: nome=${estado.nome ?? 'falta'}, e-mail=${estado.email ?? 'falta'}, curso=${estado.curso ?? 'falta'}. ` +\n    'Se a mensagem responde a esse pedido, a intenção é interesse_matricula.';\n}\n// O \"sim\" depois de o bot oferecer atendente é tratado em código (Validar resposta da IA), não aqui:\n// avisar o modelo fazia o gpt-4.1-nano classificar qualquer mensagem seguinte (até um e-mail) como falar_com_humano.\n\nconst pedido = {\n  model: MODELO,\n  ...(ACEITA_TEMPERATURA && { temperature: 0 }),\n  messages: [\n    { role: 'system', content: INSTRUCOES },\n    { role: 'system', content: contexto },\n    { role: 'user', content: $json.texto },\n  ],\n  response_format: {\n    type: 'json_schema',\n    json_schema: {\n      name: 'classificacao',\n      strict: true,\n      schema: {\n        type: 'object',\n        additionalProperties: false,\n        required: ['intencao', 'nome', 'email', 'curso'],\n        properties: {\n          intencao: { type: 'string', enum: ['interesse_matricula', 'duvida', 'falar_com_humano', 'outro'] },\n          nome: { type: ['string', 'null'] },\n          email: { type: ['string', 'null'] },\n          curso: { type: 'string', enum: ['Inglês', 'Espanhol', 'nenhum'] },\n        },\n      },\n    },\n  },\n};\n\nreturn { json: { ...$json, pedido_ia: pedido } };\n"
       },
       "id": "Montar pedido para a IA",
       "name": "Montar pedido para a IA",
@@ -390,7 +408,9 @@
       "position": [
         1760,
         0
-      ]
+      ],
+      "notes": "Instruções + contexto da matrícula + JSON schema estrito com as 4 intenções.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -422,12 +442,14 @@
           "name": "OpenAi Growth Hub"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "3 tentativas. Se falhar, segue (continue on error): vira 'outro'.",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Validar resposta da IA\"\n// Modo: Run Once for Each Item\n// Requisito 3: se a IA falhar ou devolver algo fora da lista, a intenção vira \"outro\".\n// A falha fica registrada em ia.erro para o bloco de falhas gravar no error_log.\n\nconst INTENCOES = ['interesse_matricula', 'duvida', 'falar_com_humano', 'outro'];\nconst contexto = $('Montar pedido para a IA').item.json;\nconst { pedido_ia, ...msg } = contexto;\n\nfunction lerResposta(resposta) {\n  if (resposta.error) {\n    return { erro: `OpenAI: ${resposta.error.message ?? JSON.stringify(resposta.error)}` };\n  }\n  const conteudo = resposta.choices?.[0]?.message?.content;\n  try {\n    return { dados: JSON.parse(conteudo) };\n  } catch {\n    return { erro: `Resposta da IA não é JSON: ${String(conteudo).slice(0, 200)}` };\n  }\n}\n\nconst textoOuNull = v => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null);\nconst emailValido = v => (typeof v === 'string' && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(v.trim()) ? v.trim().toLowerCase() : null);\nconst cursoValido = v => (v === 'Inglês' || v === 'Espanhol' ? v : null);\n\n// Rede de segurança para modelos pequenos: e-mail e curso dá para achar no texto sem IA.\nconst texto = msg.texto ?? '';\nconst emailNoTexto = texto.match(/[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}/)?.[0]?.replace(/[.,;!?)]+$/, '');\nfunction cursoNoTexto() {\n  const ingles = /ingl[eê]s|english/i.test(texto);\n  const espanhol = /espanhol|spanish/i.test(texto);\n  if (ingles === espanhol) return null; // nenhum ou os dois: não dá para decidir\n  return ingles ? 'Inglês' : 'Espanhol';\n}\n\nconst { dados = {}, erro = null } = lerResposta($json);\n\nlet intencao = INTENCOES.includes(dados.intencao) ? dados.intencao : 'outro';\nconst extraido = {\n  nome: textoOuNull(dados.nome),\n  email: emailValido(dados.email) ?? emailValido(emailNoTexto),\n  curso: cursoNoTexto() ?? cursoValido(dados.curso), // texto sem ambiguidade vence a IA\n};\n\n// Rede de segurança: no meio da matrícula, uma resposta curta (\"Mariana\") que trouxe dado\n// continua sendo matrícula, mesmo que a IA tenha classificado como \"outro\".\nconst trouxeDado = extraido.nome || extraido.email || extraido.curso;\nif (msg.estado?.stage === 'coletando' && intencao === 'outro' && trouxeDado) {\n  intencao = 'interesse_matricula';\n}\n\n// Rede de segurança: o bot ofereceu atendente há pouco e a resposta é um \"sim\" curto.\nconst ofereceuHaPouco = msg.estado?.ofereceu_atendente_em &&\n  Date.now() - Date.parse(msg.estado.ofereceu_atendente_em) < 30 * 60 * 1000;\nconst respostaAfirmativa = /^(sim|s|quero|pode|pode ser|claro|ok|por favor|isso)\\b/i.test(texto.trim());\nif (ofereceuHaPouco && intencao === 'outro' && respostaAfirmativa) {\n  intencao = 'falar_com_humano';\n}\n\nreturn {\n  json: {\n    ...msg,\n    ia: {\n      intencao,\n      ...extraido,\n      erro: erro ?? (dados.intencao && !INTENCOES.includes(dados.intencao) ? `Intenção fora da lista: ${dados.intencao}` : null),\n    },\n  },\n};\n"
+        "jsCode": "// Requisito 3: se a IA falhar ou devolver algo fora da lista, a intenção vira \"outro\".\n// A falha fica em ia.erro, e o nó Registrar falha da IA grava no error_log.\n\nconst INTENCOES = ['interesse_matricula', 'duvida', 'falar_com_humano', 'outro'];\nconst contexto = $('Montar pedido para a IA').item.json;\nconst { pedido_ia, ...msg } = contexto;\n\nfunction lerResposta(resposta) {\n  if (resposta.error) {\n    return { erro: `OpenAI: ${resposta.error.message ?? JSON.stringify(resposta.error)}` };\n  }\n  const conteudo = resposta.choices?.[0]?.message?.content;\n  try {\n    return { dados: JSON.parse(conteudo) };\n  } catch {\n    return { erro: `Resposta da IA não é JSON: ${String(conteudo).slice(0, 200)}` };\n  }\n}\n\nconst textoOuNull = v => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null);\nconst emailValido = v => (typeof v === 'string' && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(v.trim()) ? v.trim().toLowerCase() : null);\nconst cursoValido = v => (v === 'Inglês' || v === 'Espanhol' ? v : null);\n\n// Rede de segurança para modelos pequenos: e-mail e curso dá para achar no texto sem IA.\nconst texto = msg.texto ?? '';\nconst emailNoTexto = texto.match(/[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}/)?.[0]?.replace(/[.,;!?)]+$/, '');\nfunction cursoNoTexto() {\n  const ingles = /ingl[eê]s|english/i.test(texto);\n  const espanhol = /espanhol|spanish/i.test(texto);\n  if (ingles === espanhol) return null; // nenhum ou os dois: não dá para decidir\n  return ingles ? 'Inglês' : 'Espanhol';\n}\n\nconst { dados = {}, erro = null } = lerResposta($json);\n\nlet intencao = INTENCOES.includes(dados.intencao) ? dados.intencao : 'outro';\nconst extraido = {\n  nome: textoOuNull(dados.nome),\n  email: emailValido(dados.email) ?? emailValido(emailNoTexto),\n  curso: cursoNoTexto() ?? cursoValido(dados.curso), // texto sem ambiguidade vence a IA\n};\n\n// Rede de segurança: no meio da matrícula, uma resposta curta (\"Mariana\") que trouxe dado\n// continua sendo matrícula, mesmo que a IA tenha classificado como \"outro\".\nconst trouxeDado = extraido.nome || extraido.email || extraido.curso;\nif (msg.estado?.stage === 'coletando' && intencao === 'outro' && trouxeDado) {\n  intencao = 'interesse_matricula';\n}\n\n// Rede de segurança: o bot ofereceu atendente há pouco e a resposta é um \"sim\" curto.\nconst ofereceuHaPouco = msg.estado?.ofereceu_atendente_em &&\n  Date.now() - Date.parse(msg.estado.ofereceu_atendente_em) < 30 * 60 * 1000;\nconst respostaAfirmativa = /^(sim|s|quero|pode|pode ser|claro|ok|por favor|isso)\\b/i.test(texto.trim());\nif (ofereceuHaPouco && intencao === 'outro' && respostaAfirmativa) {\n  intencao = 'falar_com_humano';\n}\n\nreturn {\n  json: {\n    ...msg,\n    ia: {\n      intencao,\n      ...extraido,\n      erro: erro ?? (dados.intencao && !INTENCOES.includes(dados.intencao) ? `Intenção fora da lista: ${dados.intencao}` : null),\n    },\n  },\n};\n"
       },
       "id": "Validar resposta da IA",
       "name": "Validar resposta da IA",
@@ -436,7 +458,9 @@
       "position": [
         2200,
         0
-      ]
+      ],
+      "notes": "Falha ou valor fora da lista vira 'outro'. Redes de segurança em código.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -540,7 +564,9 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "fallbackOutput": 3
+        }
       },
       "id": "Intenção",
       "name": "Intenção",
@@ -549,7 +575,9 @@
       "position": [
         2420,
         0
-      ]
+      ],
+      "notes": "Uma saída por intenção. Fallback: qualquer valor inesperado vai para 'outro'.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -570,7 +598,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Montar aviso (mensagem sem texto)\"\n// Modo: Run Once for Each Item\n// \"?\", \"......\", emoji solto, foto/documento sem legenda, áudio sem transcrição, visualização única, figurinha.\n// Nada disso vai para a IA. Quem manda várias seguidas está com dificuldade, então o bot escala:\n//   1ª -> aviso   2ª -> oferece atendente   3ª -> transfere (faixa humano)   4ª+ -> silêncio\n// Figurinha é exceção (rajada de figurinhas é brincadeira, não pedido de ajuda): só o 1º aviso.\n// \"Seguidas\" = dentro de 10 minutos do último aviso. No meio da matrícula, o aviso lembra o dado que falta.\n\nconst JANELA = 10 * 60 * 1000;\n\nconst estado = $json.estado ?? {};\nconst tipo = $json.tipo;\nconst recente = estado.ultimo_aviso_em && Date.now() - Date.parse(estado.ultimo_aviso_em) < JANELA;\nconst qtd_sem_texto = recente ? (estado.qtd_sem_texto ?? 0) + 1 : 1;\n\nconst LEMBRETES = {\n  nome: 'Para continuar sua pré-matrícula, qual é o seu nome completo?',\n  email: 'Para continuar sua pré-matrícula, qual é o seu e-mail?',\n  curso: 'Para continuar sua pré-matrícula, qual curso te interessa: Inglês ou Espanhol?',\n};\nconst lembrete = estado.stage === 'coletando' ? LEMBRETES[estado.campo_pendente] ?? '' : '';\nconst comLembrete = texto => (lembrete ? `${texto} ${lembrete}` : texto);\n\nconst PRIMEIRO_AVISO = {\n  audio: comLembrete('Ainda não consigo ouvir áudios. Pode me escrever o que você precisa?'),\n  midia: comLembrete('Ainda não consigo ver imagens, vídeos ou figurinhas. Pode me escrever o que você precisa?'),\n  nao_suportado: comLembrete('Não consegui abrir essa mensagem (mensagens de visualização única não chegam para mim). Pode me escrever o que você precisa?'),\n  vazio: lembrete\n    ? `Não entendi sua mensagem. ${lembrete}`\n    : 'Não entendi sua mensagem. Posso te ajudar com informações sobre cursos e preços, fazer sua pré-matrícula ou chamar uma atendente. O que você precisa?',\n};\n\n// acao: avisar | transferir | silenciar\nlet acao = 'silenciar';\nlet resposta = null;\nlet ofereceu_atendente = false;\n\nif (qtd_sem_texto === 1) {\n  acao = 'avisar';\n  resposta = PRIMEIRO_AVISO[tipo] ?? PRIMEIRO_AVISO.vazio;\n} else if ($json.eh_figurinha) {\n  acao = 'silenciar';\n} else if (qtd_sem_texto === 2) {\n  acao = 'avisar';\n  ofereceu_atendente = true;\n  resposta = tipo === 'audio'\n    ? 'Ainda não consigo ouvir áudios. Se preferir, posso te passar para uma atendente. Quer?'\n    : 'Parece que não estou conseguindo te entender por aqui. Quer que eu chame uma atendente?';\n} else if (qtd_sem_texto === 3) {\n  acao = 'transferir';\n}\n\nreturn {\n  json: { ...$json, acao_sem_texto: acao, resposta, ultimo_aviso: tipo, qtd_sem_texto, ofereceu_atendente },\n};\n"
+        "jsCode": "// \"?\", \"......\", emoji solto, foto/documento sem legenda, áudio sem transcrição, visualização única, figurinha.\n// Nada disso vai para a IA. Quem manda várias seguidas está com dificuldade, então o bot escala:\n//   1ª -> aviso   2ª -> oferece atendente   3ª -> transfere (faixa humano)   4ª+ -> silêncio\n// Figurinha é exceção (rajada de figurinhas é brincadeira, não pedido de ajuda): só o 1º aviso.\n// \"Seguidas\" = dentro de 10 minutos do último aviso. No meio da matrícula, o aviso lembra o dado que falta.\n\nconst JANELA = 10 * 60 * 1000;\n\nconst estado = $json.estado ?? {};\nconst tipo = $json.tipo;\nconst recente = estado.ultimo_aviso_em && Date.now() - Date.parse(estado.ultimo_aviso_em) < JANELA;\nconst qtd_sem_texto = recente ? (estado.qtd_sem_texto ?? 0) + 1 : 1;\n\nconst LEMBRETES = {\n  nome: 'Para continuar sua pré-matrícula, qual é o seu nome completo?',\n  email: 'Para continuar sua pré-matrícula, qual é o seu e-mail?',\n  curso: 'Para continuar sua pré-matrícula, qual curso te interessa: Inglês ou Espanhol?',\n};\nconst lembrete = estado.stage === 'coletando' ? LEMBRETES[estado.campo_pendente] ?? '' : '';\nconst comLembrete = texto => (lembrete ? `${texto} ${lembrete}` : texto);\n\nconst PRIMEIRO_AVISO = {\n  audio: comLembrete('Ainda não consigo ouvir áudios. Pode me escrever o que você precisa?'),\n  midia: comLembrete('Ainda não consigo ver imagens, vídeos ou figurinhas. Pode me escrever o que você precisa?'),\n  nao_suportado: comLembrete('Não consegui abrir essa mensagem (mensagens de visualização única não chegam para mim). Pode me escrever o que você precisa?'),\n  vazio: lembrete\n    ? `Não entendi sua mensagem. ${lembrete}`\n    : 'Não entendi sua mensagem. Posso te ajudar com informações sobre cursos e preços, fazer sua pré-matrícula ou chamar uma atendente. O que você precisa?',\n};\n\n// acao: avisar | transferir | silenciar\nlet acao = 'silenciar';\nlet resposta = null;\nlet ofereceu_atendente = false;\n\nif (qtd_sem_texto === 1) {\n  acao = 'avisar';\n  resposta = PRIMEIRO_AVISO[tipo] ?? PRIMEIRO_AVISO.vazio;\n} else if ($json.eh_figurinha) {\n  acao = 'silenciar';\n} else if (qtd_sem_texto === 2) {\n  acao = 'avisar';\n  ofereceu_atendente = true;\n  resposta = tipo === 'audio'\n    ? 'Ainda não consigo ouvir áudios. Se preferir, posso te passar para uma atendente. Quer?'\n    : 'Parece que não estou conseguindo te entender por aqui. Quer que eu chame uma atendente?';\n} else if (qtd_sem_texto === 3) {\n  acao = 'transferir';\n}\n\nreturn {\n  json: { ...$json, acao_sem_texto: acao, resposta, ultimo_aviso: tipo, qtd_sem_texto, ofereceu_atendente },\n};\n"
       },
       "id": "Montar aviso (mensagem sem texto)",
       "name": "Montar aviso (mensagem sem texto)",
@@ -579,7 +607,9 @@
       "position": [
         1540,
         560
-      ]
+      ],
+      "notes": "Escalona em 10 min: aviso, oferta de atendente, transferência, silêncio.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -632,10 +662,36 @@
               },
               "renameOutput": true,
               "outputKey": "transferir"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "Avisar ou transferir?-silenciar",
+                    "leftValue": "={{ $json.acao_sem_texto }}",
+                    "rightValue": "silenciar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "silenciar"
             }
           ]
         },
-        "options": {}
+        "options": {
+          "fallbackOutput": 2
+        }
       },
       "id": "Avisar ou transferir?",
       "name": "Avisar ou transferir?",
@@ -644,7 +700,9 @@
       "position": [
         1760,
         560
-      ]
+      ],
+      "notes": "Fallback: valor inesperado fica em silêncio.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -667,7 +725,9 @@
           "id": "2kaRKTIHEWBpLG2K",
           "name": "Postgres - falebem"
         }
-      }
+      },
+      "notes": "Grava a contagem de avisos. Não mexe nos dados do lead.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -698,7 +758,9 @@
           "id": "u1bzi4Eqo27GTZj9",
           "name": "chatwoot api token"
         }
-      }
+      },
+      "notes": "POST /messages no Chatwoot.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -721,11 +783,13 @@
           "id": "2kaRKTIHEWBpLG2K",
           "name": "Postgres - falebem"
         }
-      }
+      },
+      "notes": "Grava a 3ª mensagem, para a 4ª ficar em silêncio.",
+      "notesInFlow": true
     },
     {
       "parameters": {
-        "content": "## Faixa: dúvida\nA OpenAI recebe **só os dados oficiais do PDF** e é instruída a dizer que não sabe quando a resposta não está ali.\n\n**Trava anti-invenção** (*Conferir resposta da dúvida*): todo `R$` e todo horário citado precisa existir nos dados oficiais (389, 349, 120 / 8h, 18h). Se não existir, a resposta é descartada e o bot diz que não tem a informação e oferece uma atendente. Inventar preço é o pior erro deste bot, então não confiamos só no prompt.\n\nQuando oferece atendente, anota no Postgres: se a pessoa responder \"sim\", a IA entende como pedido de atendimento.\n\nSe a OpenAI falhar, o contato recebe a mensagem de contingência e o erro segue em `erros` para o log.",
+        "content": "## Faixa: dúvida\nA OpenAI recebe **só os dados oficiais do PDF** e é instruída a dizer que não sabe quando a resposta não está ali.\n\n**Trava anti-invenção** (*Conferir resposta da dúvida*): todo `R$` e todo horário citado precisa existir nos dados oficiais (389, 349, 120 / 8h, 18h). Se não existir, a resposta é descartada e o bot diz que não tem a informação e oferece uma atendente. Inventar preço é o pior erro deste bot, então não confiamos só no prompt.\n\nQuando oferece atendente, anota no Postgres: se a pessoa responder \"sim\", a IA entende como pedido de atendimento.\n\nSe a OpenAI falhar, o contato recebe a mensagem de contingência, o erro vai para o `error_log` e a equipe recebe uma nota privada.",
         "height": 680,
         "width": 1300,
         "color": 5
@@ -742,7 +806,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Montar pedido de resposta (dúvida)\"\n// Modo: Run Once for Each Item\n// Requisito 4: responder SOMENTE com os dados do cenário. Sem resposta ali -> diz que não sabe\n// e oferece uma atendente. A trava contra preço/horário inventado fica no nó seguinte.\n\nconst MODELO = $json.config?.openai_model || 'gpt-4.1-nano';\nconst ACEITA_TEMPERATURA = !/^(gpt-5|o\\d)/.test(MODELO);\n\nconst DADOS_DA_ESCOLA = `Escola Fale Bem — dados oficiais (única fonte permitida):\n- Inglês: duração de 18 meses, mensalidade de R$ 389, turmas de manhã, à noite e aos sábados.\n- Espanhol: duração de 12 meses, mensalidade de R$ 349, turmas à noite e aos sábados.\n- Matrícula: R$ 120.\n- Aula experimental: gratuita.\n- Atendimento humano: de segunda a sexta, das 8h às 18h, horário de Recife.`;\n\nconst INSTRUCOES = `Você é o assistente de WhatsApp da Escola Fale Bem. Responda à dúvida do contato em português, de forma curta e simpática (no máximo 3 frases).\n\nRegras obrigatórias:\n1. Use SOMENTE os dados oficiais abaixo. Não use conhecimento próprio.\n2. Nunca invente preço, desconto, forma de pagamento, horário de aula, endereço, professor ou qualquer dado que não esteja abaixo.\n3. Se a pergunta não puder ser respondida só com esses dados, diga que não tem essa informação e pergunte se a pessoa quer falar com uma atendente. Nesse caso, marque respondida_com_dados = false.\n\n${DADOS_DA_ESCOLA}`;\n\nconst pedido = {\n  model: MODELO,\n  ...(ACEITA_TEMPERATURA && { temperature: 0 }),\n  messages: [\n    { role: 'system', content: INSTRUCOES },\n    { role: 'user', content: $json.texto },\n  ],\n  response_format: {\n    type: 'json_schema',\n    json_schema: {\n      name: 'resposta_duvida',\n      strict: true,\n      schema: {\n        type: 'object',\n        additionalProperties: false,\n        required: ['resposta', 'respondida_com_dados'],\n        properties: {\n          resposta: { type: 'string' },\n          respondida_com_dados: { type: 'boolean' },\n        },\n      },\n    },\n  },\n};\n\nreturn { json: { ...$json, pedido_ia: pedido } };\n"
+        "jsCode": "// Requisito 4: responder SOMENTE com os dados do cenário. Sem resposta ali -> diz que não sabe\n// e oferece uma atendente. A trava contra preço/horário inventado fica no nó seguinte.\n\nconst MODELO = $json.config?.openai_model || 'gpt-4.1-nano';\nconst ACEITA_TEMPERATURA = !/^(gpt-5|o\\d)/.test(MODELO);\n\nconst DADOS_DA_ESCOLA = `Escola Fale Bem — dados oficiais (única fonte permitida):\n- Inglês: duração de 18 meses, mensalidade de R$ 389, turmas de manhã, à noite e aos sábados.\n- Espanhol: duração de 12 meses, mensalidade de R$ 349, turmas à noite e aos sábados.\n- Matrícula: R$ 120.\n- Aula experimental: gratuita.\n- Atendimento humano: de segunda a sexta, das 8h às 18h, horário de Recife.`;\n\nconst INSTRUCOES = `Você é o assistente de WhatsApp da Escola Fale Bem. Responda à dúvida do contato em português, de forma curta e simpática (no máximo 3 frases).\n\nRegras obrigatórias:\n1. Use SOMENTE os dados oficiais abaixo. Não use conhecimento próprio.\n2. Nunca invente preço, desconto, forma de pagamento, horário de aula, endereço, professor ou qualquer dado que não esteja abaixo.\n3. Se a pergunta não puder ser respondida só com esses dados, diga que não tem essa informação e pergunte se a pessoa quer falar com uma atendente. Nesse caso, marque respondida_com_dados = false.\n\n${DADOS_DA_ESCOLA}`;\n\nconst pedido = {\n  model: MODELO,\n  ...(ACEITA_TEMPERATURA && { temperature: 0 }),\n  messages: [\n    { role: 'system', content: INSTRUCOES },\n    { role: 'user', content: $json.texto },\n  ],\n  response_format: {\n    type: 'json_schema',\n    json_schema: {\n      name: 'resposta_duvida',\n      strict: true,\n      schema: {\n        type: 'object',\n        additionalProperties: false,\n        required: ['resposta', 'respondida_com_dados'],\n        properties: {\n          resposta: { type: 'string' },\n          respondida_com_dados: { type: 'boolean' },\n        },\n      },\n    },\n  },\n};\n\nreturn { json: { ...$json, pedido_ia: pedido } };\n"
       },
       "id": "Montar pedido de resposta (dúvida)",
       "name": "Montar pedido de resposta (dúvida)",
@@ -751,7 +815,9 @@
       "position": [
         2640,
         560
-      ]
+      ],
+      "notes": "Prompt só com os dados oficiais do PDF + schema {resposta, respondida_com_dados}.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -783,12 +849,14 @@
           "name": "OpenAi Growth Hub"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "3 tentativas. Se falhar, segue e o contato recebe a contingência.",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Conferir resposta da dúvida\"\n// Modo: Run Once for Each Item\n// Trava contra invenção: toda quantia em R$ e todo horário citado precisam existir nos dados oficiais.\n// Se a IA falhou ou citou algo fora da lista, a resposta é trocada por uma mensagem segura.\n\nconst PRECOS_OFICIAIS = new Set([389, 349, 120]);\nconst HORAS_OFICIAIS = new Set([8, 18]);\n\nconst SEM_RESPOSTA = 'Essa informação eu não tenho aqui. Quer que eu chame uma atendente para te ajudar?';\nconst CONTINGENCIA = 'Desculpe, tive um problema para responder agora. Já deixei sua mensagem registrada e uma atendente vai te responder assim que possível.';\n\nconst contexto = $('Montar pedido de resposta (dúvida)').item.json;\nconst { pedido_ia, ...msg } = contexto;\nconst erros = [msg.ia?.erro].filter(Boolean);\n\nfunction lerResposta(resposta) {\n  if (resposta.error) return { erro: `OpenAI (dúvida): ${resposta.error.message ?? JSON.stringify(resposta.error)}` };\n  try {\n    const dados = JSON.parse(resposta.choices?.[0]?.message?.content);\n    if (typeof dados.resposta !== 'string' || !dados.resposta.trim()) throw new Error('vazia');\n    return { dados };\n  } catch {\n    return { erro: 'Resposta da dúvida inválida' };\n  }\n}\n\n// Lista o que a resposta afirma que não está nos dados oficiais.\nfunction dadosInventados(texto) {\n  const problemas = [];\n  for (const [, valor] of texto.matchAll(/R\\$\\s*(\\d+(?:[.,]\\d+)?)/g)) {\n    const numero = Number(valor.replace(/\\.(?=\\d{3})/g, '').replace(',', '.'));\n    if (!PRECOS_OFICIAIS.has(numero)) problemas.push(`preço R$ ${valor}`);\n  }\n  for (const [, hora] of texto.matchAll(/\\b(\\d{1,2})\\s*(?:h|horas?\\b|:\\d{2})/gi)) {\n    if (!HORAS_OFICIAIS.has(Number(hora))) problemas.push(`horário ${hora}h`);\n  }\n  return problemas;\n}\n\nconst { dados, erro } = lerResposta($json);\nlet resposta;\nlet trava = null;\n\nif (erro) {\n  erros.push(erro);\n  resposta = CONTINGENCIA;\n} else {\n  const inventado = dadosInventados(dados.resposta);\n  if (inventado.length) {\n    trava = `Resposta descartada, citava ${inventado.join(', ')}: \"${dados.resposta}\"`;\n    resposta = SEM_RESPOSTA;\n  } else {\n    resposta = dados.resposta.trim();\n  }\n}\n\nreturn {\n  json: {\n    ...msg,\n    resposta,\n    oferece_atendente: Boolean(trava) || dados?.respondida_com_dados === false,\n    trava_anti_invencao: trava,\n    erros,\n  },\n};\n"
+        "jsCode": "// Trava contra invenção: toda quantia em R$ e todo horário citado precisam existir nos dados oficiais.\n// Se a IA falhou ou citou algo fora da lista, a resposta é trocada por uma mensagem segura.\n\nconst PRECOS_OFICIAIS = new Set([389, 349, 120]);\nconst HORAS_OFICIAIS = new Set([8, 18]);\n\nconst SEM_RESPOSTA = 'Essa informação eu não tenho aqui. Quer que eu chame uma atendente para te ajudar?';\nconst CONTINGENCIA = 'Desculpe, tive um problema para responder agora. Já deixei sua mensagem registrada e uma atendente vai te responder assim que possível.';\n\nconst contexto = $('Montar pedido de resposta (dúvida)').item.json;\nconst { pedido_ia, ...msg } = contexto;\nconst erros = [msg.ia?.erro].filter(Boolean);\n\nfunction lerResposta(resposta) {\n  if (resposta.error) return { erro: `OpenAI (dúvida): ${resposta.error.message ?? JSON.stringify(resposta.error)}` };\n  try {\n    const dados = JSON.parse(resposta.choices?.[0]?.message?.content);\n    if (typeof dados.resposta !== 'string' || !dados.resposta.trim()) throw new Error('vazia');\n    return { dados };\n  } catch {\n    return { erro: 'Resposta da dúvida inválida' };\n  }\n}\n\n// Lista o que a resposta afirma que não está nos dados oficiais.\nfunction dadosInventados(texto) {\n  const problemas = [];\n  for (const [, valor] of texto.matchAll(/R\\$\\s*(\\d+(?:[.,]\\d+)?)/g)) {\n    const numero = Number(valor.replace(/\\.(?=\\d{3})/g, '').replace(',', '.'));\n    if (!PRECOS_OFICIAIS.has(numero)) problemas.push(`preço R$ ${valor}`);\n  }\n  for (const [, hora] of texto.matchAll(/\\b(\\d{1,2})\\s*(?:h|horas?\\b|:\\d{2})/gi)) {\n    if (!HORAS_OFICIAIS.has(Number(hora))) problemas.push(`horário ${hora}h`);\n  }\n  return problemas;\n}\n\nconst { dados, erro } = lerResposta($json);\nlet resposta;\nlet trava = null;\n\nif (erro) {\n  erros.push(erro);\n  resposta = CONTINGENCIA;\n} else {\n  const inventado = dadosInventados(dados.resposta);\n  if (inventado.length) {\n    trava = `Resposta descartada, citava ${inventado.join(', ')}: \"${dados.resposta}\"`;\n    resposta = SEM_RESPOSTA;\n  } else {\n    resposta = dados.resposta.trim();\n  }\n}\n\nreturn {\n  json: {\n    ...msg,\n    resposta,\n    oferece_atendente: Boolean(trava) || dados?.respondida_com_dados === false,\n    trava_anti_invencao: trava,\n    erros,\n  },\n};\n"
       },
       "id": "Conferir resposta da dúvida",
       "name": "Conferir resposta da dúvida",
@@ -797,7 +865,9 @@
       "position": [
         3080,
         560
-      ]
+      ],
+      "notes": "Trava anti-invenção: R$ e horário fora da lista oficial = resposta descartada.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -831,7 +901,9 @@
       "position": [
         3300,
         560
-      ]
+      ],
+      "notes": "Se ofereceu atendente, anota a hora para entender o 'sim' seguinte.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -854,7 +926,9 @@
           "id": "2kaRKTIHEWBpLG2K",
           "name": "Postgres - falebem"
         }
-      }
+      },
+      "notes": "Grava ofereceu_atendente_em (vale por 30 min).",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -885,7 +959,9 @@
           "id": "u1bzi4Eqo27GTZj9",
           "name": "chatwoot api token"
         }
-      }
+      },
+      "notes": "POST /messages no Chatwoot.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -906,7 +982,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Atualizar dados do lead\"\n// Modo: Run Once for Each Item\n// Requisito 5: junta o que já foi coletado (Postgres) com o que a IA extraiu desta mensagem\n// e decide o próximo passo:\n//   perguntar  -> ainda falta nome, e-mail ou curso (pergunta um por vez, nessa ordem)\n//   cadastrar  -> tem os três: segue para o Pipedrive\n// Quem já virou lead (stage \"concluido\") também passa pelo Pipedrive: o cadastro não duplica\n// pessoa nem negócio aberto, e se alguém apagou o lead no CRM, ele é recriado.\n\n// Dados do cenário (PDF). O valor do negócio no Pipedrive é a previsão do contrato:\n// matrícula + mensalidade × duração. A atendente ajusta se houver desconto.\nconst MATRICULA = 120;\nconst CURSOS = {\n  'Inglês': { mensalidade: 389, meses: 18 },\n  'Espanhol': { mensalidade: 349, meses: 12 },\n};\nconst valorContrato = curso => (CURSOS[curso] ? MATRICULA + CURSOS[curso].mensalidade * CURSOS[curso].meses : null);\n\nconst estado = $json.estado ?? {};\nconst ia = $json.ia ?? {};\n\n// Dado novo desta mensagem vale mais que o salvo (permite corrigir o e-mail, por exemplo).\nconst lead = {\n  nome: ia.nome ?? estado.nome ?? null,\n  email: ia.email ?? estado.email ?? null,\n  curso: ia.curso ?? estado.curso ?? null,\n};\nconst primeiroNome = lead.nome ? lead.nome.split(' ')[0] : '';\nconst perguntouAntes = campo => estado.stage === 'coletando' && estado.campo_pendente === campo;\n\nfunction pergunta(campo) {\n  if (campo === 'nome') {\n    return perguntouAntes('nome')\n      ? 'Não consegui pegar seu nome. Pode me dizer como você se chama?'\n      : 'Que ótimo que você quer estudar com a gente! Para fazer sua pré-matrícula, qual é o seu nome completo?';\n  }\n  if (campo === 'email') {\n    if (perguntouAntes('email')) {\n      return $json.texto.includes('@')\n        ? 'Esse e-mail parece incompleto. Pode conferir e mandar de novo? (ex.: nome@gmail.com)'\n        : 'Qual é o seu e-mail? (ex.: nome@gmail.com)';\n    }\n    return ia.nome && !estado.nome ? `Prazer, ${primeiroNome}! Qual é o seu e-mail?` : 'Qual é o seu e-mail?';\n  }\n  return perguntouAntes('curso')\n    ? 'Temos Inglês e Espanhol. Qual dos dois você prefere?'\n    : 'E qual curso te interessa: Inglês ou Espanhol?';\n}\n\nlet acao;\nlet resposta = null;\nlet campo_pendente = null;\nlet novo_stage;\n\nconst ja_era_lead = estado.stage === 'concluido';\nconst faltando = ['nome', 'email', 'curso'].filter(campo => !lead[campo]);\n\nif (faltando.length) {\n  acao = 'perguntar';\n  novo_stage = 'coletando';\n  campo_pendente = faltando[0];\n  resposta = pergunta(campo_pendente);\n} else {\n  acao = 'cadastrar';\n  // Só vira (ou continua) \"concluido\" depois que o Pipedrive confirmar.\n  novo_stage = ja_era_lead ? 'concluido' : 'coletando';\n}\n\nreturn {\n  json: {\n    ...$json,\n    lead: { ...lead, valor_contrato: valorContrato(lead.curso) },\n    ja_era_lead,\n    acao,\n    campo_pendente,\n    novo_stage,\n    resposta,\n  },\n};\n"
+        "jsCode": "// Requisito 5: junta o que já foi coletado (Postgres) com o que a IA extraiu desta mensagem\n// e decide o próximo passo:\n//   perguntar  -> ainda falta nome, e-mail ou curso (pergunta um por vez, nessa ordem)\n//   cadastrar  -> tem os três: segue para o Pipedrive\n// Quem já virou lead (stage \"concluido\") também passa pelo Pipedrive: o cadastro não duplica\n// pessoa nem negócio aberto, e se alguém apagou o lead no CRM, ele é recriado.\n\n// Dados do cenário (PDF). O valor do negócio no Pipedrive é a previsão do contrato:\n// matrícula + mensalidade × duração. A atendente ajusta se houver desconto.\nconst MATRICULA = 120;\nconst CURSOS = {\n  'Inglês': { mensalidade: 389, meses: 18 },\n  'Espanhol': { mensalidade: 349, meses: 12 },\n};\nconst valorContrato = curso => (CURSOS[curso] ? MATRICULA + CURSOS[curso].mensalidade * CURSOS[curso].meses : null);\n\nconst estado = $json.estado ?? {};\nconst ia = $json.ia ?? {};\n\n// Dado novo desta mensagem vale mais que o salvo (permite corrigir o e-mail, por exemplo).\nconst lead = {\n  nome: ia.nome ?? estado.nome ?? null,\n  email: ia.email ?? estado.email ?? null,\n  curso: ia.curso ?? estado.curso ?? null,\n};\nconst primeiroNome = lead.nome ? lead.nome.split(' ')[0] : '';\nconst perguntouAntes = campo => estado.stage === 'coletando' && estado.campo_pendente === campo;\n\nfunction pergunta(campo) {\n  if (campo === 'nome') {\n    return perguntouAntes('nome')\n      ? 'Não consegui pegar seu nome. Pode me dizer como você se chama?'\n      : 'Que ótimo que você quer estudar com a gente! Para fazer sua pré-matrícula, qual é o seu nome completo?';\n  }\n  if (campo === 'email') {\n    if (perguntouAntes('email')) {\n      return $json.texto.includes('@')\n        ? 'Esse e-mail parece incompleto. Pode conferir e mandar de novo? (ex.: nome@gmail.com)'\n        : 'Qual é o seu e-mail? (ex.: nome@gmail.com)';\n    }\n    return ia.nome && !estado.nome ? `Prazer, ${primeiroNome}! Qual é o seu e-mail?` : 'Qual é o seu e-mail?';\n  }\n  return perguntouAntes('curso')\n    ? 'Temos Inglês e Espanhol. Qual dos dois você prefere?'\n    : 'E qual curso te interessa: Inglês ou Espanhol?';\n}\n\nlet acao;\nlet resposta = null;\nlet campo_pendente = null;\nlet novo_stage;\n\nconst ja_era_lead = estado.stage === 'concluido';\nconst faltando = ['nome', 'email', 'curso'].filter(campo => !lead[campo]);\n\nif (faltando.length) {\n  acao = 'perguntar';\n  novo_stage = 'coletando';\n  campo_pendente = faltando[0];\n  resposta = pergunta(campo_pendente);\n} else {\n  acao = 'cadastrar';\n  // Só vira (ou continua) \"concluido\" depois que o Pipedrive confirmar.\n  novo_stage = ja_era_lead ? 'concluido' : 'coletando';\n}\n\nreturn {\n  json: {\n    ...$json,\n    lead: { ...lead, valor_contrato: valorContrato(lead.curso) },\n    ja_era_lead,\n    acao,\n    campo_pendente,\n    novo_stage,\n    resposta,\n  },\n};\n"
       },
       "id": "Atualizar dados do lead",
       "name": "Atualizar dados do lead",
@@ -915,7 +991,9 @@
       "position": [
         2640,
         1440
-      ]
+      ],
+      "notes": "Junta o salvo com o extraído agora. Falta dado: pergunta. Tem os 3: cadastra.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -971,7 +1049,10 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "desconhecido"
+        }
       },
       "id": "Próximo passo do lead",
       "name": "Próximo passo do lead",
@@ -980,7 +1061,9 @@
       "position": [
         2860,
         1440
-      ]
+      ],
+      "notes": "Fallback: valor inesperado gera erro e cai na faixa de falhas.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1003,7 +1086,9 @@
           "id": "2kaRKTIHEWBpLG2K",
           "name": "Postgres - falebem"
         }
-      }
+      },
+      "notes": "Upsert ANTES de enviar: o bot nunca pergunta algo e esquece que perguntou.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1034,7 +1119,9 @@
           "id": "u1bzi4Eqo27GTZj9",
           "name": "chatwoot api token"
         }
-      }
+      },
+      "notes": "POST /messages no Chatwoot.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1075,12 +1162,14 @@
           "id": "8M6jVYTL6blpUZfd",
           "name": "Pipedrive API"
         }
-      }
+      },
+      "notes": "Busca pelos 8 últimos dígitos (existem em qualquer formato do número).",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Encontrar pessoa pelo telefone\"\n// Modo: Run Once for Each Item\n// Requisito 5 (sem duplicar pelo telefone) e Parte 3, caso 2.\n// A busca do Pipedrive é por trecho do telefone, então pode trazer gente parecida.\n// Aqui cada telefone encontrado é normalizado (mesma função do 2.1) e só conta\n// como a mesma pessoa se ficar idêntico ao telefone do contato.\n\n// DDDs em uso no Brasil (Anatel). Combinações como 20, 23, 25, 26, 30, 36... não existem.\nconst DDDS_VALIDOS = new Set([\n  11, 12, 13, 14, 15, 16, 17, 18, 19,\n  21, 22, 24, 27, 28,\n  31, 32, 33, 34, 35, 37, 38,\n  41, 42, 43, 44, 45, 46, 47, 48, 49,\n  51, 53, 54, 55,\n  61, 62, 63, 64, 65, 66, 67, 68, 69,\n  71, 73, 74, 75, 77, 79,\n  81, 82, 83, 84, 85, 86, 87, 88, 89,\n  91, 92, 93, 94, 95, 96, 97, 98, 99,\n]);\n\nfunction normalizarTelefone(valor) {\n  if (valor === null || valor === undefined) return null;\n  const texto = String(valor).trim();\n  let digitos = texto.replace(/\\D/g, '');\n\n  // Veio com \"+\" mas não é +55: número estrangeiro, não é celular brasileiro.\n  if (texto.startsWith('+') && !digitos.startsWith('55')) return null;\n\n  // Com código do país: 55 + DDD(2) + 9 dígitos = 13.\n  // Só removemos o 55 quando o tamanho bate, porque 55 também é um DDD (RS).\n  if (digitos.length === 13 && digitos.startsWith('55')) {\n    digitos = digitos.slice(2);\n  } else if (digitos.length === 12 && digitos.startsWith('0')) {\n    // Prefixo de discagem interurbana: 0 + DDD + número.\n    digitos = digitos.slice(1);\n  }\n\n  // Celular nacional: DDD(2) + 9 + 8 dígitos = 11.\n  if (digitos.length !== 11) return null;\n  if (!DDDS_VALIDOS.has(Number(digitos.slice(0, 2)))) return null;\n  if (digitos[2] !== '9') return null;\n\n  return '+55' + digitos;\n}\n\nconst contexto = $('Atualizar dados do lead').item.json;\nconst alvo = contexto.telefone_normalizado;\nconst resultados = $json.data?.items ?? [];\n\nlet pessoa = null;\nif (alvo) {\n  for (const { item } of resultados) {\n    const telefones = (item?.phones ?? []).map(t => (typeof t === 'string' ? t : t?.value));\n    if (telefones.some(t => normalizarTelefone(t) === alvo)) {\n      pessoa = item;\n      break;\n    }\n  }\n}\n\nreturn {\n  json: {\n    ...contexto,\n    pipedrive_person_id: pessoa?.id ?? null,\n  },\n};\n"
+        "jsCode": "// Requisito 5 (sem duplicar pelo telefone) e Parte 3, caso 2.\n// A busca do Pipedrive é por trecho do telefone, então pode trazer gente parecida.\n// Aqui cada telefone encontrado é normalizado (mesma função do 2.1) e só conta\n// como a mesma pessoa se ficar idêntico ao telefone do contato.\n\n// DDDs em uso no Brasil (Anatel). Combinações como 20, 23, 25, 26, 30, 36... não existem.\nconst DDDS_VALIDOS = new Set([\n  11, 12, 13, 14, 15, 16, 17, 18, 19,\n  21, 22, 24, 27, 28,\n  31, 32, 33, 34, 35, 37, 38,\n  41, 42, 43, 44, 45, 46, 47, 48, 49,\n  51, 53, 54, 55,\n  61, 62, 63, 64, 65, 66, 67, 68, 69,\n  71, 73, 74, 75, 77, 79,\n  81, 82, 83, 84, 85, 86, 87, 88, 89,\n  91, 92, 93, 94, 95, 96, 97, 98, 99,\n]);\n\nfunction normalizarTelefone(valor) {\n  if (valor === null || valor === undefined) return null;\n  const texto = String(valor).trim();\n  let digitos = texto.replace(/\\D/g, '');\n\n  // Veio com \"+\" mas não é +55: número estrangeiro, não é celular brasileiro.\n  if (texto.startsWith('+') && !digitos.startsWith('55')) return null;\n\n  // Com código do país: 55 + DDD(2) + 9 dígitos = 13.\n  // Só removemos o 55 quando o tamanho bate, porque 55 também é um DDD (RS).\n  if (digitos.length === 13 && digitos.startsWith('55')) {\n    digitos = digitos.slice(2);\n  } else if (digitos.length === 12 && digitos.startsWith('0')) {\n    // Prefixo de discagem interurbana: 0 + DDD + número.\n    digitos = digitos.slice(1);\n  }\n\n  // Celular nacional: DDD(2) + 9 + 8 dígitos = 11.\n  if (digitos.length !== 11) return null;\n  if (!DDDS_VALIDOS.has(Number(digitos.slice(0, 2)))) return null;\n  if (digitos[2] !== '9') return null;\n\n  return '+55' + digitos;\n}\n\nconst contexto = $('Atualizar dados do lead').item.json;\nconst alvo = contexto.telefone_normalizado;\nconst resultados = $json.data?.items ?? [];\n\nlet pessoa = null;\nif (alvo) {\n  for (const { item } of resultados) {\n    const telefones = (item?.phones ?? []).map(t => (typeof t === 'string' ? t : t?.value));\n    if (telefones.some(t => normalizarTelefone(t) === alvo)) {\n      pessoa = item;\n      break;\n    }\n  }\n}\n\nreturn {\n  json: {\n    ...contexto,\n    pipedrive_person_id: pessoa?.id ?? null,\n  },\n};\n"
       },
       "id": "Encontrar pessoa pelo telefone",
       "name": "Encontrar pessoa pelo telefone",
@@ -1089,7 +1178,9 @@
       "position": [
         3300,
         1480
-      ]
+      ],
+      "notes": "Normaliza cada resultado com o 2.1: só é a mesma pessoa se ficar idêntico.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1123,7 +1214,9 @@
       "position": [
         3520,
         1480
-      ]
+      ],
+      "notes": "Achou: atualiza. Não achou: cria. Assim não duplica.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1154,7 +1247,9 @@
           "id": "8M6jVYTL6blpUZfd",
           "name": "Pipedrive API"
         }
-      }
+      },
+      "notes": "PATCH /api/v2/persons/{id} com nome, e-mail e telefone.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1185,7 +1280,9 @@
           "id": "8M6jVYTL6blpUZfd",
           "name": "Pipedrive API"
         }
-      }
+      },
+      "notes": "POST /api/v2/persons com nome, e-mail e telefone.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1199,7 +1296,9 @@
       "position": [
         3960,
         1480
-      ]
+      ],
+      "notes": "Pega o id devolvido por atualizar ou criar.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1240,12 +1339,14 @@
           "id": "8M6jVYTL6blpUZfd",
           "name": "Pipedrive API"
         }
-      }
+      },
+      "notes": "GET /api/v2/deals?person_id=…&status=open",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Verificar negócio aberto\"\n// Modo: Run Once for Each Item\n// Lead que volta numa conversa nova não gera negócio repetido: se a pessoa já tem um negócio\n// ABERTO com o mesmo título, reaproveitamos. Ganho ou perdido não conta (aí é uma nova venda).\n\nconst contexto = $('Guardar id da pessoa').item.json;\nconst titulo = `Matrícula ${contexto.lead.curso}`;\nconst negocios = Array.isArray($json.data) ? $json.data : [];\nconst aberto = negocios.find(n => n.title === titulo && n.status === 'open');\n\nreturn {\n  json: {\n    ...contexto,\n    titulo_negocio: titulo,\n    negocio_existente_id: aberto?.id ?? null,\n  },\n};\n"
+        "jsCode": "// Lead que volta numa conversa nova não gera negócio repetido: se a pessoa já tem um negócio\n// ABERTO com o mesmo título, reaproveitamos. Ganho ou perdido não conta (aí é uma nova venda).\n\nconst contexto = $('Guardar id da pessoa').item.json;\nconst titulo = `Matrícula ${contexto.lead.curso}`;\nconst negocios = Array.isArray($json.data) ? $json.data : [];\nconst aberto = negocios.find(n => n.title === titulo && n.status === 'open');\n\nreturn {\n  json: {\n    ...contexto,\n    titulo_negocio: titulo,\n    negocio_existente_id: aberto?.id ?? null,\n  },\n};\n"
       },
       "id": "Verificar negócio aberto",
       "name": "Verificar negócio aberto",
@@ -1254,7 +1355,9 @@
       "position": [
         4400,
         1480
-      ]
+      ],
+      "notes": "Já existe negócio ABERTO com o mesmo título? Então não cria outro.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1288,7 +1391,9 @@
       "position": [
         4620,
         1480
-      ]
+      ],
+      "notes": "Sim: pula a criação. Não: cria o negócio.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1319,7 +1424,9 @@
           "id": "8M6jVYTL6blpUZfd",
           "name": "Pipedrive API"
         }
-      }
+      },
+      "notes": "Matrícula <curso>, valor = matrícula + mensalidade × duração, BRL.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1350,12 +1457,14 @@
           "id": "u1bzi4Eqo27GTZj9",
           "name": "chatwoot api token"
         }
-      }
+      },
+      "notes": "/labels SUBSTITUI a lista: envia as etiquetas antigas + a nova.",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Confirmar matrícula\"\n// Modo: Run Once for Each Item\n// Pipedrive e etiqueta deram certo: marca a conversa como concluída e monta a confirmação.\n// Quem já era lead recebe um \"seus dados já estão com a equipe\" em vez da confirmação nova.\n\nconst contexto = $('Atualizar dados do lead').item.json;\nconst primeiroNome = contexto.lead.nome.split(' ')[0];\n\nconst resposta = contexto.ja_era_lead\n  ? `Seus dados já estão com a nossa equipe, ${primeiroNome}! Uma atendente vai falar com você para finalizar ` +\n    'a matrícula. Se quiser falar com ela agora, é só pedir.'\n  : `Prontinho, ${primeiroNome}! Sua pré-matrícula no curso de ${contexto.lead.curso} foi registrada. ` +\n    'Uma atendente vai entrar em contato para finalizar. Ah, e a aula experimental é gratuita!';\n\nreturn {\n  json: {\n    ...contexto,\n    novo_stage: 'concluido',\n    campo_pendente: null,\n    resposta,\n  },\n};\n"
+        "jsCode": "// Pipedrive e etiqueta deram certo: marca a conversa como concluída e monta a confirmação.\n// Quem já era lead recebe um \"seus dados já estão com a equipe\" em vez da confirmação nova.\n\nconst contexto = $('Atualizar dados do lead').item.json;\nconst primeiroNome = contexto.lead.nome.split(' ')[0];\n\nconst resposta = contexto.ja_era_lead\n  ? `Seus dados já estão com a nossa equipe, ${primeiroNome}! Uma atendente vai falar com você para finalizar ` +\n    'a matrícula. Se quiser falar com ela agora, é só pedir.'\n  : `Prontinho, ${primeiroNome}! Sua pré-matrícula no curso de ${contexto.lead.curso} foi registrada. ` +\n    'Uma atendente vai entrar em contato para finalizar. Ah, e a aula experimental é gratuita!';\n\nreturn {\n  json: {\n    ...contexto,\n    novo_stage: 'concluido',\n    campo_pendente: null,\n    resposta,\n  },\n};\n"
       },
       "id": "Confirmar matrícula",
       "name": "Confirmar matrícula",
@@ -1364,7 +1473,9 @@
       "position": [
         5280,
         1480
-      ]
+      ],
+      "notes": "Tudo certo no Pipedrive: marca concluído e monta a confirmação.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1387,7 +1498,9 @@
           "id": "2kaRKTIHEWBpLG2K",
           "name": "Postgres - falebem"
         }
-      }
+      },
+      "notes": "Upsert com stage concluido, antes de enviar a confirmação.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1418,7 +1531,9 @@
           "id": "u1bzi4Eqo27GTZj9",
           "name": "chatwoot api token"
         }
-      }
+      },
+      "notes": "POST /messages no Chatwoot.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1439,7 +1554,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Config: feriados\"\n// Modo: Run Once for Each Item\n// Dias em que a equipe NÃO atende, além de sábado e domingo. REVISAR TODO ANO.\n// Nacionais + Pernambuco + Recife. Carnaval e Corpus Christi são ponto facultativo:\n// estão na lista por costume em Recife, mas a escola deve confirmar se fecha.\n\nconst FERIADOS = {\n  // 2026\n  '2026-01-01': 'Confraternização Universal',\n  '2026-02-16': 'Carnaval (segunda)',\n  '2026-02-17': 'Carnaval (terça)',\n  '2026-03-06': 'Data Magna de Pernambuco',\n  '2026-04-03': 'Sexta-feira Santa',\n  '2026-04-21': 'Tiradentes',\n  '2026-05-01': 'Dia do Trabalho',\n  '2026-06-04': 'Corpus Christi',\n  '2026-06-24': 'São João (Recife)',\n  '2026-07-16': 'Nossa Senhora do Carmo (Recife)',\n  '2026-09-07': 'Independência',\n  '2026-10-12': 'Nossa Senhora Aparecida',\n  '2026-11-02': 'Finados',\n  '2026-11-15': 'Proclamação da República',\n  '2026-11-20': 'Consciência Negra',\n  '2026-12-08': 'Nossa Senhora da Conceição (Recife)',\n  '2026-12-25': 'Natal',\n  // 2027\n  '2027-01-01': 'Confraternização Universal',\n  '2027-02-08': 'Carnaval (segunda)',\n  '2027-02-09': 'Carnaval (terça)',\n  '2027-03-06': 'Data Magna de Pernambuco',\n  '2027-03-26': 'Sexta-feira Santa',\n  '2027-04-21': 'Tiradentes',\n  '2027-05-01': 'Dia do Trabalho',\n  '2027-05-27': 'Corpus Christi',\n  '2027-06-24': 'São João (Recife)',\n  '2027-07-16': 'Nossa Senhora do Carmo (Recife)',\n  '2027-09-07': 'Independência',\n  '2027-10-12': 'Nossa Senhora Aparecida',\n  '2027-11-02': 'Finados',\n  '2027-11-15': 'Proclamação da República',\n  '2027-11-20': 'Consciência Negra',\n  '2027-12-08': 'Nossa Senhora da Conceição (Recife)',\n  '2027-12-25': 'Natal',\n};\n\nreturn { json: { ...$json, feriados: Object.keys(FERIADOS) } };\n"
+        "jsCode": "// Dias em que a equipe NÃO atende, além de sábado e domingo. REVISAR TODO ANO.\n// Nacionais + Pernambuco + Recife. Carnaval e Corpus Christi são ponto facultativo:\n// estão na lista por costume em Recife, mas a escola deve confirmar se fecha.\n\nconst FERIADOS = {\n  // 2026\n  '2026-01-01': 'Confraternização Universal',\n  '2026-02-16': 'Carnaval (segunda)',\n  '2026-02-17': 'Carnaval (terça)',\n  '2026-03-06': 'Data Magna de Pernambuco',\n  '2026-04-03': 'Sexta-feira Santa',\n  '2026-04-21': 'Tiradentes',\n  '2026-05-01': 'Dia do Trabalho',\n  '2026-06-04': 'Corpus Christi',\n  '2026-06-24': 'São João (Recife)',\n  '2026-07-16': 'Nossa Senhora do Carmo (Recife)',\n  '2026-09-07': 'Independência',\n  '2026-10-12': 'Nossa Senhora Aparecida',\n  '2026-11-02': 'Finados',\n  '2026-11-15': 'Proclamação da República',\n  '2026-11-20': 'Consciência Negra',\n  '2026-12-08': 'Nossa Senhora da Conceição (Recife)',\n  '2026-12-25': 'Natal',\n  // 2027\n  '2027-01-01': 'Confraternização Universal',\n  '2027-02-08': 'Carnaval (segunda)',\n  '2027-02-09': 'Carnaval (terça)',\n  '2027-03-06': 'Data Magna de Pernambuco',\n  '2027-03-26': 'Sexta-feira Santa',\n  '2027-04-21': 'Tiradentes',\n  '2027-05-01': 'Dia do Trabalho',\n  '2027-05-27': 'Corpus Christi',\n  '2027-06-24': 'São João (Recife)',\n  '2027-07-16': 'Nossa Senhora do Carmo (Recife)',\n  '2027-09-07': 'Independência',\n  '2027-10-12': 'Nossa Senhora Aparecida',\n  '2027-11-02': 'Finados',\n  '2027-11-15': 'Proclamação da República',\n  '2027-11-20': 'Consciência Negra',\n  '2027-12-08': 'Nossa Senhora da Conceição (Recife)',\n  '2027-12-25': 'Natal',\n};\n\nreturn { json: { ...$json, feriados: Object.keys(FERIADOS) } };\n"
       },
       "id": "Config: feriados",
       "name": "Config: feriados",
@@ -1448,12 +1563,14 @@
       "position": [
         2640,
         2380
-      ]
+      ],
+      "notes": "Feriados nacionais, PE e Recife 2026-2027. Revisar todo ano.",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Horário de atendimento (com feriados)\"\n// Modo: Run Once for Each Item\n// Requisito 6. Mesma regra do exercício 2.2 (seg-sex, 8h-18h, America/Recife) + feriados do nó\n// \"Config: feriados\". Fora do horário, calcula quando a equipe volta, pulando fim de semana e feriado\n// (ex.: sexta 09/10 às 19h -> segunda 12/10 é feriado -> volta terça, 13/10, às 8h).\n\nconst FUSO = 'America/Recife';\nconst ABRE = 8;   // 08:00\nconst FECHA = 18; // 18:00 (exclusive)\nconst DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];\nconst feriados = new Set($json.feriados ?? []);\n\n// Data e hora de Recife a partir de um instante (Intl é nativo do JS; continua certo se o fuso mudar de regra).\nconst formatador = new Intl.DateTimeFormat('en-CA', {\n  timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit',\n  hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short',\n});\nconst SEMANA = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };\n\nfunction emRecife(instante) {\n  const p = Object.fromEntries(formatador.formatToParts(instante).map(x => [x.type, x.value]));\n  return {\n    data: `${p.year}-${p.month}-${p.day}`,\n    diaSemana: SEMANA[p.weekday],\n    minutos: Number(p.hour) * 60 + Number(p.minute),\n  };\n}\n\nconst diaUtil = r => r.diaSemana >= 1 && r.diaSemana <= 5 && !feriados.has(r.data);\n\n// Momento da mensagem (o Chatwoot pode mandar ISO ou timestamp em segundos); sem data válida, agora.\nfunction instanteDaMensagem(valor) {\n  const data = typeof valor === 'number' ? new Date(valor * 1000) : new Date(valor ?? NaN);\n  return Number.isNaN(data.getTime()) ? new Date() : data;\n}\n\nconst agora = instanteDaMensagem($json.created_at);\nconst hoje = emRecife(agora);\nconst dentro_do_horario = diaUtil(hoje) && hoje.minutos >= ABRE * 60 && hoje.minutos < FECHA * 60;\n\nlet motivo = null;\nlet proxima_abertura = null;\nif (!dentro_do_horario) {\n  motivo = feriados.has(hoje.data) ? 'feriado' : !diaUtil(hoje) ? 'fim_de_semana' : 'fora_do_horario';\n\n  // Hoje ainda abre (dia útil, antes das 8h)? Senão, procura o próximo dia útil.\n  let dia = hoje;\n  let diasAFrente = 0;\n  if (!(diaUtil(hoje) && hoje.minutos < ABRE * 60)) {\n    do {\n      diasAFrente += 1;\n      dia = emRecife(new Date(agora.getTime() + diasAFrente * 24 * 60 * 60 * 1000));\n    } while (!diaUtil(dia) && diasAFrente < 15);\n  }\n  const [, mes, diaMes] = dia.data.split('-');\n  const quando = diasAFrente === 0 ? 'hoje' : diasAFrente === 1 ? 'amanhã' : DIAS[dia.diaSemana];\n  proxima_abertura = `${quando}, ${diaMes}/${mes}, às ${ABRE}h`;\n}\n\nreturn {\n  json: { ...$json, dentro_do_horario, motivo_fora_do_horario: motivo, proxima_abertura },\n};\n"
+        "jsCode": "// Requisito 6. Mesma regra do exercício 2.2 (seg-sex, 8h-18h, America/Recife) + feriados do nó\n// \"Config: feriados\". Fora do horário, calcula quando a equipe volta, pulando fim de semana e feriado\n// (ex.: sexta 09/10 às 19h -> segunda 12/10 é feriado -> volta terça, 13/10, às 8h).\n\nconst FUSO = 'America/Recife';\nconst ABRE = 8;   // 08:00\nconst FECHA = 18; // 18:00 (exclusive)\nconst DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];\nconst feriados = new Set($json.feriados ?? []);\n\n// Data e hora de Recife a partir de um instante (Intl é nativo do JS; continua certo se o fuso mudar de regra).\nconst formatador = new Intl.DateTimeFormat('en-CA', {\n  timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit',\n  hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short',\n});\nconst SEMANA = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };\n\nfunction emRecife(instante) {\n  const p = Object.fromEntries(formatador.formatToParts(instante).map(x => [x.type, x.value]));\n  return {\n    data: `${p.year}-${p.month}-${p.day}`,\n    diaSemana: SEMANA[p.weekday],\n    minutos: Number(p.hour) * 60 + Number(p.minute),\n  };\n}\n\nconst diaUtil = r => r.diaSemana >= 1 && r.diaSemana <= 5 && !feriados.has(r.data);\n\n// Momento da mensagem (o Chatwoot pode mandar ISO ou timestamp em segundos); sem data válida, agora.\nfunction instanteDaMensagem(valor) {\n  const data = typeof valor === 'number' ? new Date(valor * 1000) : new Date(valor ?? NaN);\n  return Number.isNaN(data.getTime()) ? new Date() : data;\n}\n\nconst agora = instanteDaMensagem($json.created_at);\nconst hoje = emRecife(agora);\nconst dentro_do_horario = diaUtil(hoje) && hoje.minutos >= ABRE * 60 && hoje.minutos < FECHA * 60;\n\nlet motivo = null;\nlet proxima_abertura = null;\nif (!dentro_do_horario) {\n  motivo = feriados.has(hoje.data) ? 'feriado' : !diaUtil(hoje) ? 'fim_de_semana' : 'fora_do_horario';\n\n  // Hoje ainda abre (dia útil, antes das 8h)? Senão, procura o próximo dia útil.\n  let dia = hoje;\n  let diasAFrente = 0;\n  if (!(diaUtil(hoje) && hoje.minutos < ABRE * 60)) {\n    do {\n      diasAFrente += 1;\n      dia = emRecife(new Date(agora.getTime() + diasAFrente * 24 * 60 * 60 * 1000));\n    } while (!diaUtil(dia) && diasAFrente < 15);\n  }\n  const [, mes, diaMes] = dia.data.split('-');\n  const quando = diasAFrente === 0 ? 'hoje' : diasAFrente === 1 ? 'amanhã' : DIAS[dia.diaSemana];\n  proxima_abertura = `${quando}, ${diaMes}/${mes}, às ${ABRE}h`;\n}\n\nreturn {\n  json: { ...$json, dentro_do_horario, motivo_fora_do_horario: motivo, proxima_abertura },\n};\n"
       },
       "id": "Horário de atendimento (com feriados)",
       "name": "Horário de atendimento (com feriados)",
@@ -1462,7 +1579,9 @@
       "position": [
         2860,
         2380
-      ]
+      ],
+      "notes": "Seg-sex 8h-18h em Recife (Intl), menos feriados. Calcula a próxima abertura.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1496,7 +1615,9 @@
       "position": [
         3080,
         2380
-      ]
+      ],
+      "notes": "Dentro: transfere. Fora: informa quando a equipe volta.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1520,7 +1641,9 @@
       "position": [
         3300,
         2280
-      ]
+      ],
+      "notes": "Texto editável sem código.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1551,7 +1674,9 @@
           "id": "u1bzi4Eqo27GTZj9",
           "name": "chatwoot api token"
         }
-      }
+      },
+      "notes": "POST /messages no Chatwoot.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1582,7 +1707,9 @@
           "id": "u1bzi4Eqo27GTZj9",
           "name": "chatwoot api token"
         }
-      }
+      },
+      "notes": "toggle_status = open. Daqui em diante o bot fica em silêncio.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1606,7 +1733,9 @@
       "position": [
         3300,
         2500
-      ]
+      ],
+      "notes": "Texto editável sem código. A conversa continua pending.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1637,7 +1766,9 @@
           "id": "u1bzi4Eqo27GTZj9",
           "name": "chatwoot api token"
         }
-      }
+      },
+      "notes": "POST /messages no Chatwoot.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1658,7 +1789,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Montar resposta (outro)\"\n// Modo: Run Once for Each Item\n// Saudação, agradecimento, assunto sem relação ou falha da IA (requisito 3: falhou -> \"outro\").\n// No meio da matrícula, lembra o dado que falta; senão, apresenta o que o bot sabe fazer.\n\nconst estado = $json.estado ?? {};\n\nconst LEMBRETES = {\n  nome: 'Para continuar sua pré-matrícula, qual é o seu nome completo?',\n  email: 'Para continuar sua pré-matrícula, qual é o seu e-mail?',\n  curso: 'Para continuar sua pré-matrícula, qual curso te interessa: Inglês ou Espanhol?',\n};\nconst lembrete = estado.stage === 'coletando' ? LEMBRETES[estado.campo_pendente] : null;\n\nconst resposta = lembrete ??\n  'Oi! Sou o assistente virtual da Escola Fale Bem. Posso te ajudar com informações sobre os cursos de inglês e espanhol, ' +\n  'fazer sua pré-matrícula ou chamar uma atendente. Como posso ajudar?';\n\nreturn { json: { ...$json, resposta } };\n"
+        "jsCode": "// Saudação, agradecimento, assunto sem relação ou falha da IA (requisito 3: falhou -> \"outro\").\n// No meio da matrícula, lembra o dado que falta; senão, apresenta o que o bot sabe fazer.\n\nconst estado = $json.estado ?? {};\n\nconst LEMBRETES = {\n  nome: 'Para continuar sua pré-matrícula, qual é o seu nome completo?',\n  email: 'Para continuar sua pré-matrícula, qual é o seu e-mail?',\n  curso: 'Para continuar sua pré-matrícula, qual curso te interessa: Inglês ou Espanhol?',\n};\nconst lembrete = estado.stage === 'coletando' ? LEMBRETES[estado.campo_pendente] : null;\n\nconst resposta = lembrete ??\n  'Oi! Sou o assistente virtual da Escola Fale Bem. Posso te ajudar com informações sobre os cursos de inglês e espanhol, ' +\n  'fazer sua pré-matrícula ou chamar uma atendente. Como posso ajudar?';\n\nreturn { json: { ...$json, resposta } };\n"
       },
       "id": "Montar resposta (outro)",
       "name": "Montar resposta (outro)",
@@ -1667,7 +1798,9 @@
       "position": [
         2640,
         3140
-      ]
+      ],
+      "notes": "No meio da matrícula, lembra o dado que falta. Senão, apresenta o menu.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1698,7 +1831,9 @@
           "id": "u1bzi4Eqo27GTZj9",
           "name": "chatwoot api token"
         }
-      }
+      },
+      "notes": "POST /messages no Chatwoot.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1732,7 +1867,9 @@
       "position": [
         2200,
         -200
-      ]
+      ],
+      "notes": "A OpenAI falhou na classificação?",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1756,7 +1893,9 @@
           "name": "Postgres - falebem"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "Grava o erro em error_log. O contato já recebe o menu pela faixa outro.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1790,7 +1929,9 @@
       "position": [
         3300,
         740
-      ]
+      ],
+      "notes": "A OpenAI falhou ao responder a dúvida?",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1814,12 +1955,14 @@
           "name": "Postgres - falebem"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "Grava o erro em error_log. O contato já recebe a contingência.",
+      "notesInFlow": true
     },
     {
       "parameters": {
-        "content": "## Faixa: falhas (requisito 7)\nComeça no **Error Trigger**, sem linhas vindo do resto do bot. O n8n roda esta faixa quando uma execução falha: Pipedrive, Chatwoot ou Postgres fora do ar (depois das tentativas) ou erro de código.\n\n1. **Buscar a execução que falhou** pela API do n8n, para descobrir a conversa (funciona mesmo com o banco do bot fora do ar).\n2. **Registrar falha** na tabela `error_log` (banco `falebem`): nó, mensagem, execução, conversa. Para descobrir depois: `SELECT * FROM error_log ORDER BY created_at DESC;`\n3. **Contingência**: \"Desculpe, tive um problema...\" para o contato não ficar sem resposta.\n\n2 e 3 saem em paralelo: se o banco estiver fora, a mensagem ao contato sai mesmo assim.\n\nFalhas da OpenAI não chegam aqui: o bot segue sozinho e registra o erro no próprio workflow.",
-        "height": 760,
+        "content": "## Faixa: falhas (requisito 7)\nComeça no **Error Trigger**, sem linhas vindo do resto do bot. O n8n roda esta faixa quando uma execução falha: Pipedrive, Chatwoot ou Postgres fora do ar (depois das tentativas) ou erro de código.\n\n1. **Buscar a execução que falhou** pela API do n8n, para descobrir a conversa (funciona mesmo com o banco do bot fora do ar).\n2. **Registrar falha** na tabela `error_log` (banco `falebem`): nó, mensagem, execução, conversa. Para descobrir depois: `SELECT * FROM error_log ORDER BY created_at DESC;`\n3. **Contingência**: \"Desculpe, tive um problema...\" para o contato não ficar sem resposta.\n4. **Alerta**: nota privada na conversa do Chatwoot. A equipe vê o erro na hora; o contato não vê.\n\n2, 3 e 4 saem em paralelo: se o banco estiver fora, a mensagem ao contato sai mesmo assim.\n\nFalhas da OpenAI não chegam aqui: o bot segue sozinho, registra o erro e deixa a nota privada no próprio workflow.",
+        "height": 900,
         "width": 1080,
         "color": 1
       },
@@ -1841,7 +1984,9 @@
       "position": [
         2640,
         3900
-      ]
+      ],
+      "notes": "Error Trigger: roda quando uma execução de produção falha. Não dispara no Test.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1879,12 +2024,14 @@
           "name": "Header Auth account"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "Lê a execução pela API do n8n para achar a conversa (funciona sem o banco).",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Montar registro de falha\" (workflow Bot Fale Bem - Falhas)\n// Modo: Run Once for Each Item\n// Requisito 7. O n8n roda este workflow quando uma execução do bot falha (Pipedrive, Chatwoot,\n// Postgres ou erro de código). A execução que falhou é lida pela API do n8n para descobrir a conversa:\n// isso funciona mesmo com o banco do bot fora do ar. Monta:\n//   - o registro para a tabela error_log (alguém descobre depois: SELECT * FROM error_log)\n//   - a mensagem de contingência, para o contato não ficar sem resposta\n\nconst CONTINGENCIA = 'Desculpe, tive um problema para responder agora. Já deixei sua mensagem registrada ' +\n  'e uma atendente vai te responder assim que possível.';\n\nconst gatilho = $('Quando o bot falhar').item.json;\nconst execucao = $json; // resposta de GET /api/v1/executions/{id}?includeData=true\n\nconst runData = execucao.data?.resultData?.runData ?? {};\nconst saidaDo = nome => runData[nome]?.[0]?.data?.main?.[0]?.[0]?.json;\nconst corpo = saidaDo('Chatwoot: mensagem recebida')?.body ?? {};\nconst config = saidaDo('Config')?.config ?? {};\n\nconst conversation_id = corpo.conversation?.id ?? null;\nconst account_id = corpo.account?.id ?? null;\nconst leuExecucao = !execucao.error && Boolean(execucao.data);\n\nreturn {\n  json: {\n    conversation_id,\n    account_id,\n    config,\n    resposta: CONTINGENCIA,\n    enviar_contingencia: Boolean(conversation_id && account_id && config.chatwoot_url),\n    registro: {\n      execution_id: String(gatilho.execution?.id ?? ''),\n      node: gatilho.execution?.lastNodeExecuted ?? 'desconhecido',\n      message: String(gatilho.execution?.error?.message ?? 'Erro sem mensagem').slice(0, 2000),\n      conversation_id,\n      payload: {\n        workflow: gatilho.workflow?.name ?? null,\n        execucao_url: gatilho.execution?.url ?? null,\n        mensagem_do_contato: corpo.content ?? null,\n        message_id: corpo.id ?? null,\n        aviso: leuExecucao ? null : 'Não foi possível ler a execução pela API do n8n; contingência não enviada.',\n      },\n    },\n  },\n};\n"
+        "jsCode": "// Requisito 7. O n8n roda esta faixa quando uma execução do bot falha (Pipedrive, Chatwoot,\n// Postgres ou erro de código). A execução que falhou é lida pela API do n8n para descobrir a conversa:\n// isso funciona mesmo com o banco do bot fora do ar. Monta:\n//   - o registro para a tabela error_log (alguém descobre depois: SELECT * FROM error_log)\n//   - a mensagem de contingência, para o contato não ficar sem resposta\n\nconst CONTINGENCIA = 'Desculpe, tive um problema para responder agora. Já deixei sua mensagem registrada ' +\n  'e uma atendente vai te responder assim que possível.';\n\nconst gatilho = $('Quando o bot falhar').item.json;\nconst execucao = $json; // resposta de GET /api/v1/executions/{id}?includeData=true\n\nconst runData = execucao.data?.resultData?.runData ?? {};\nconst saidaDo = nome => runData[nome]?.[0]?.data?.main?.[0]?.[0]?.json;\nconst corpo = saidaDo('Chatwoot: mensagem recebida')?.body ?? {};\nconst config = saidaDo('Config')?.config ?? {};\n\nconst conversation_id = corpo.conversation?.id ?? null;\nconst account_id = corpo.account?.id ?? null;\nconst leuExecucao = !execucao.error && Boolean(execucao.data);\n\nreturn {\n  json: {\n    conversation_id,\n    account_id,\n    config,\n    resposta: CONTINGENCIA,\n    enviar_contingencia: Boolean(conversation_id && account_id && config.chatwoot_url),\n    registro: {\n      execution_id: String(gatilho.execution?.id ?? ''),\n      node: gatilho.execution?.lastNodeExecuted ?? 'desconhecido',\n      message: String(gatilho.execution?.error?.message ?? 'Erro sem mensagem').slice(0, 2000),\n      conversation_id,\n      payload: {\n        workflow: gatilho.workflow?.name ?? null,\n        execucao_url: gatilho.execution?.url ?? null,\n        mensagem_do_contato: corpo.content ?? null,\n        message_id: corpo.id ?? null,\n        aviso: leuExecucao ? null : 'Não foi possível ler a execução pela API do n8n; contingência não enviada.',\n      },\n    },\n  },\n};\n"
       },
       "id": "Montar registro de falha",
       "name": "Montar registro de falha",
@@ -1893,7 +2040,9 @@
       "position": [
         3080,
         3900
-      ]
+      ],
+      "notes": "Monta a linha do error_log e a mensagem de contingência.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1917,7 +2066,9 @@
           "name": "Postgres - falebem"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "Em paralelo com a contingência: se o banco caiu, a mensagem sai mesmo assim.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1951,7 +2102,9 @@
       "position": [
         3300,
         4000
-      ]
+      ],
+      "notes": "Só envia se achou a conversa e a URL do Chatwoot.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -1982,7 +2135,9 @@
           "id": "u1bzi4Eqo27GTZj9",
           "name": "chatwoot api token"
         }
-      }
+      },
+      "notes": "POST /messages: o contato nunca fica sem resposta.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -2009,7 +2164,9 @@
       "position": [
         0,
         4880
-      ]
+      ],
+      "notes": "Test workflow → Testar Parte 2 roda os três exercícios.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -2022,12 +2179,14 @@
       "position": [
         220,
         4660
-      ]
+      ],
+      "notes": "Os casos do PDF.",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Normalizar telefone (2.1)\"\n// Modo: Run Once for Each Item\n// Entrada: $json.telefone (qualquer formato). Saída: o mesmo item + telefone_normalizado\n// no formato +55DDDNÚMERO, ou null quando não dá para garantir um celular brasileiro válido.\n\n// DDDs em uso no Brasil (Anatel). Combinações como 20, 23, 25, 26, 30, 36... não existem.\nconst DDDS_VALIDOS = new Set([\n  11, 12, 13, 14, 15, 16, 17, 18, 19,\n  21, 22, 24, 27, 28,\n  31, 32, 33, 34, 35, 37, 38,\n  41, 42, 43, 44, 45, 46, 47, 48, 49,\n  51, 53, 54, 55,\n  61, 62, 63, 64, 65, 66, 67, 68, 69,\n  71, 73, 74, 75, 77, 79,\n  81, 82, 83, 84, 85, 86, 87, 88, 89,\n  91, 92, 93, 94, 95, 96, 97, 98, 99,\n]);\n\nfunction normalizarTelefone(valor) {\n  if (valor === null || valor === undefined) return null;\n  const texto = String(valor).trim();\n  let digitos = texto.replace(/\\D/g, '');\n\n  // Veio com \"+\" mas não é +55: número estrangeiro, não é celular brasileiro.\n  if (texto.startsWith('+') && !digitos.startsWith('55')) return null;\n\n  // Com código do país: 55 + DDD(2) + 9 dígitos = 13.\n  // Só removemos o 55 quando o tamanho bate, porque 55 também é um DDD (RS).\n  if (digitos.length === 13 && digitos.startsWith('55')) {\n    digitos = digitos.slice(2);\n  } else if (digitos.length === 12 && digitos.startsWith('0')) {\n    // Prefixo de discagem interurbana: 0 + DDD + número.\n    digitos = digitos.slice(1);\n  }\n\n  // Celular nacional: DDD(2) + 9 + 8 dígitos = 11.\n  if (digitos.length !== 11) return null;\n  if (!DDDS_VALIDOS.has(Number(digitos.slice(0, 2)))) return null;\n  if (digitos[2] !== '9') return null;\n\n  return '+55' + digitos;\n}\n\nreturn {\n  json: {\n    ...$json,\n    telefone_normalizado: normalizarTelefone($json.telefone),\n  },\n};\n"
+        "jsCode": "// Entrada: $json.telefone (qualquer formato). Saída: o mesmo item + telefone_normalizado\n// no formato +55DDDNÚMERO, ou null quando não dá para garantir um celular brasileiro válido.\n\n// DDDs em uso no Brasil (Anatel). Combinações como 20, 23, 25, 26, 30, 36... não existem.\nconst DDDS_VALIDOS = new Set([\n  11, 12, 13, 14, 15, 16, 17, 18, 19,\n  21, 22, 24, 27, 28,\n  31, 32, 33, 34, 35, 37, 38,\n  41, 42, 43, 44, 45, 46, 47, 48, 49,\n  51, 53, 54, 55,\n  61, 62, 63, 64, 65, 66, 67, 68, 69,\n  71, 73, 74, 75, 77, 79,\n  81, 82, 83, 84, 85, 86, 87, 88, 89,\n  91, 92, 93, 94, 95, 96, 97, 98, 99,\n]);\n\nfunction normalizarTelefone(valor) {\n  if (valor === null || valor === undefined) return null;\n  const texto = String(valor).trim();\n  let digitos = texto.replace(/\\D/g, '');\n\n  // Veio com \"+\" mas não é +55: número estrangeiro, não é celular brasileiro.\n  if (texto.startsWith('+') && !digitos.startsWith('55')) return null;\n\n  // Com código do país: 55 + DDD(2) + 9 dígitos = 13.\n  // Só removemos o 55 quando o tamanho bate, porque 55 também é um DDD (RS).\n  if (digitos.length === 13 && digitos.startsWith('55')) {\n    digitos = digitos.slice(2);\n  } else if (digitos.length === 12 && digitos.startsWith('0')) {\n    // Prefixo de discagem interurbana: 0 + DDD + número.\n    digitos = digitos.slice(1);\n  }\n\n  // Celular nacional: DDD(2) + 9 + 8 dígitos = 11.\n  if (digitos.length !== 11) return null;\n  if (!DDDS_VALIDOS.has(Number(digitos.slice(0, 2)))) return null;\n  if (digitos[2] !== '9') return null;\n\n  return '+55' + digitos;\n}\n\nreturn {\n  json: {\n    ...$json,\n    telefone_normalizado: normalizarTelefone($json.telefone),\n  },\n};\n"
       },
       "id": "Exercício 2.1: normalizar telefone",
       "name": "Exercício 2.1: normalizar telefone",
@@ -2036,7 +2195,9 @@
       "position": [
         440,
         4660
-      ]
+      ],
+      "notes": "Telefone em qualquer formato vira +55DDDNÚMERO ou null.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -2049,12 +2210,14 @@
       "position": [
         220,
         4880
-      ]
+      ],
+      "notes": "Os casos do PDF.",
+      "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Code node: \"Dentro do horário de atendimento (2.2)\"\n// Modo: Run Once for Each Item\n// Entrada: $json.data (ISO 8601 em UTC). Saída: o mesmo item + dentro_do_horario (boolean).\n// Regra: segunda a sexta, das 8h00 (inclusive) às 18h00 (exclusive), fuso America/Recife.\n\nconst FUSO = 'America/Recife';\nconst DIAS_UTEIS = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);\nconst ABRE = 8 * 60;   // 08:00 em minutos\nconst FECHA = 18 * 60; // 18:00 em minutos\n\n// Usa o Intl (nativo do JS) para ler dia da semana e hora no fuso de Recife,\n// em vez de subtrair 3h na mão: continua certo se o fuso mudar de regra.\nconst formatador = new Intl.DateTimeFormat('en-US', {\n  timeZone: FUSO,\n  weekday: 'short',\n  hour: '2-digit',\n  minute: '2-digit',\n  hourCycle: 'h23',\n});\n\nfunction dentroDoHorario(iso) {\n  const data = new Date(iso);\n  // Data inválida conta como fora do horário: na dúvida, não prometemos atendente.\n  if (!iso || Number.isNaN(data.getTime())) return false;\n\n  const partes = Object.fromEntries(\n    formatador.formatToParts(data).map(p => [p.type, p.value]),\n  );\n  const minutos = Number(partes.hour) * 60 + Number(partes.minute);\n\n  return DIAS_UTEIS.has(partes.weekday) && minutos >= ABRE && minutos < FECHA;\n}\n\nreturn {\n  json: {\n    ...$json,\n    dentro_do_horario: dentroDoHorario($json.data),\n  },\n};\n"
+        "jsCode": "// Entrada: $json.data (ISO 8601 em UTC). Saída: o mesmo item + dentro_do_horario (boolean).\n// Regra: segunda a sexta, das 8h00 (inclusive) às 18h00 (exclusive), fuso America/Recife.\n\nconst FUSO = 'America/Recife';\nconst DIAS_UTEIS = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);\nconst ABRE = 8 * 60;   // 08:00 em minutos\nconst FECHA = 18 * 60; // 18:00 em minutos\n\n// Usa o Intl (nativo do JS) para ler dia da semana e hora no fuso de Recife,\n// em vez de subtrair 3h na mão: continua certo se o fuso mudar de regra.\nconst formatador = new Intl.DateTimeFormat('en-US', {\n  timeZone: FUSO,\n  weekday: 'short',\n  hour: '2-digit',\n  minute: '2-digit',\n  hourCycle: 'h23',\n});\n\nfunction dentroDoHorario(iso) {\n  const data = new Date(iso);\n  // Data inválida conta como fora do horário: na dúvida, não prometemos atendente.\n  if (!iso || Number.isNaN(data.getTime())) return false;\n\n  const partes = Object.fromEntries(\n    formatador.formatToParts(data).map(p => [p.type, p.value]),\n  );\n  const minutos = Number(partes.hour) * 60 + Number(partes.minute);\n\n  return DIAS_UTEIS.has(partes.weekday) && minutos >= ABRE && minutos < FECHA;\n}\n\nreturn {\n  json: {\n    ...$json,\n    dentro_do_horario: dentroDoHorario($json.data),\n  },\n};\n"
       },
       "id": "Exercício 2.2: horário de atendimento",
       "name": "Exercício 2.2: horário de atendimento",
@@ -2063,7 +2226,9 @@
       "position": [
         440,
         4880
-      ]
+      ],
+      "notes": "Seg-sex, 8h (inclusive) a 18h (exclusive), America/Recife.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -2076,11 +2241,13 @@
       "position": [
         220,
         5100
-      ]
+      ],
+      "notes": "Os casos do PDF, fora de ordem.",
+      "notesInFlow": true
     },
     {
       "parameters": {
-        "jsCode": "// Code node: \"Juntar mensagens picadas (2.3)\"\n// Modo: Run Once for All Items\n// Entrada: itens com { conversation_id, content, created_at }, em qualquer ordem.\n// Saída: um item por conversa, com os textos em ordem cronológica unidos por espaço.\n\nconst conversas = new Map();\n\nfor (const [indice, item] of $input.all().entries()) {\n  const { conversation_id, content, created_at } = item.json;\n  const texto = String(content ?? '').trim();\n  if (!texto) continue; // anexo/figurinha sem texto não entra na frase\n\n  const quando = Date.parse(created_at);\n  if (!conversas.has(conversation_id)) conversas.set(conversation_id, []);\n  conversas.get(conversation_id).push({\n    texto,\n    created_at,\n    quando: Number.isNaN(quando) ? Infinity : quando, // data inválida vai para o fim\n    indice, // desempate: mesmo instante, mantém a ordem em que chegaram\n  });\n}\n\nconst resultado = [...conversas.entries()].map(([conversation_id, mensagens]) => {\n  mensagens.sort((a, b) => a.quando - b.quando || a.indice - b.indice);\n  return {\n    conversation_id,\n    content: mensagens.map(m => m.texto).join(' '),\n    quantidade_mensagens: mensagens.length,\n    primeira_mensagem_em: mensagens[0].created_at,\n    ultima_mensagem_em: mensagens[mensagens.length - 1].created_at,\n    _inicio: mensagens[0].quando,\n  };\n});\n\n// Conversa que começou primeiro sai primeiro.\nresultado.sort((a, b) => a._inicio - b._inicio);\n\nreturn resultado.map(({ _inicio, ...json }) => ({ json }));\n"
+        "jsCode": "// Entrada: itens com { conversation_id, content, created_at }, em qualquer ordem.\n// Saída: um item por conversa, com os textos em ordem cronológica unidos por espaço.\n\nconst conversas = new Map();\n\nfor (const [indice, item] of $input.all().entries()) {\n  const { conversation_id, content, created_at } = item.json;\n  const texto = String(content ?? '').trim();\n  if (!texto) continue; // anexo/figurinha sem texto não entra na frase\n\n  const quando = Date.parse(created_at);\n  if (!conversas.has(conversation_id)) conversas.set(conversation_id, []);\n  conversas.get(conversation_id).push({\n    texto,\n    created_at,\n    quando: Number.isNaN(quando) ? Infinity : quando, // data inválida vai para o fim\n    indice, // desempate: mesmo instante, mantém a ordem em que chegaram\n  });\n}\n\nconst resultado = [...conversas.entries()].map(([conversation_id, mensagens]) => {\n  mensagens.sort((a, b) => a.quando - b.quando || a.indice - b.indice);\n  return {\n    conversation_id,\n    content: mensagens.map(m => m.texto).join(' '),\n    quantidade_mensagens: mensagens.length,\n    primeira_mensagem_em: mensagens[0].created_at,\n    ultima_mensagem_em: mensagens[mensagens.length - 1].created_at,\n    _inicio: mensagens[0].quando,\n  };\n});\n\n// Conversa que começou primeiro sai primeiro.\nresultado.sort((a, b) => a._inicio - b._inicio);\n\nreturn resultado.map(({ _inicio, ...json }) => ({ json }));\n"
       },
       "id": "Exercício 2.3: juntar mensagens picadas",
       "name": "Exercício 2.3: juntar mensagens picadas",
@@ -2089,7 +2256,139 @@
       "position": [
         440,
         5100
-      ]
+      ],
+      "notes": "Um item por conversa, textos em ordem cronológica.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "Silenciar (não responde)",
+      "name": "Silenciar (não responde)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1980,
+        840
+      ],
+      "notes": "4ª mensagem sem texto seguida (ou figurinha repetida): o bot não responde.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "errorMessage": "=Passo do lead desconhecido: {{ $json.acao }}"
+      },
+      "id": "Erro: passo do lead desconhecido",
+      "name": "Erro: passo do lead desconhecido",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        3080,
+        1700
+      ],
+      "notes": "Para a execução de propósito: a faixa de falhas registra e manda contingência.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.chatwoot_url }}/api/v1/accounts/{{ $json.account_id }}/conversations/{{ $json.conversation_id }}/messages",
+        "options": {
+          "timeout": 15000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: '⚠️ Alerta do bot: a IA não conseguiu classificar a última mensagem do contato, e ele recebeu o menu. Vale conferir a conversa. Erro: ' + $json.ia.erro, message_type: 'outgoing', private: true }) }}"
+      },
+      "id": "Alertar equipe (falha da IA)",
+      "name": "Alertar equipe (falha da IA)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        -360
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "u1bzi4Eqo27GTZj9",
+          "name": "chatwoot api token"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Nota privada na conversa: a equipe vê, o contato não.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.chatwoot_url }}/api/v1/accounts/{{ $json.account_id }}/conversations/{{ $json.conversation_id }}/messages",
+        "options": {
+          "timeout": 15000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: '⚠️ Alerta do bot: a IA não conseguiu responder a dúvida do contato, e ele recebeu a mensagem de contingência. Vale responder por aqui. Erro: ' + $json.erros.join(' | '), message_type: 'outgoing', private: true }) }}"
+      },
+      "id": "Alertar equipe (falha da IA na dúvida)",
+      "name": "Alertar equipe (falha da IA na dúvida)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3740,
+        740
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "u1bzi4Eqo27GTZj9",
+          "name": "chatwoot api token"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Nota privada na conversa: a equipe vê, o contato não.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.chatwoot_url }}/api/v1/accounts/{{ $json.account_id }}/conversations/{{ $json.conversation_id }}/messages",
+        "options": {
+          "timeout": 15000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: '⚠️ Alerta do bot: falha no nó \"' + $json.registro.node + '\": ' + $json.registro.message + '. O contato recebeu a mensagem de contingência. Detalhes no error_log, execução ' + $json.registro.execution_id + '.', message_type: 'outgoing', private: true }) }}"
+      },
+      "id": "Alertar equipe (falha)",
+      "name": "Alertar equipe (falha)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3520,
+        4160
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "u1bzi4Eqo27GTZj9",
+          "name": "chatwoot api token"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Nota privada na conversa: a equipe vê, o contato não.",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -2278,6 +2577,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Silenciar (não responde)",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -2414,6 +2720,13 @@
         [
           {
             "node": "Pipedrive: buscar pessoa pelo telefone",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro: passo do lead desconhecido",
             "type": "main",
             "index": 0
           }
@@ -2679,6 +2992,11 @@
             "node": "Registrar falha da IA",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Alertar equipe (falha da IA)",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -2688,6 +3006,11 @@
         [
           {
             "node": "Registrar falha da IA (dúvida)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alertar equipe (falha da IA na dúvida)",
             "type": "main",
             "index": 0
           }
@@ -2737,6 +3060,11 @@
         [
           {
             "node": "Enviar mensagem de contingência",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alertar equipe (falha)",
             "type": "main",
             "index": 0
           }
